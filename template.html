@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Report Title — Report Kit</title>
+  <meta name="description" content="One-line summary of this report for link previews.">
+
+  <!-- Fonts: IBM Plex (sans / serif / mono). Trim weights you don't use. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital@0;1&display=swap" rel="stylesheet">
+
+  <!-- Design system: tokens MUST load before report.css -->
+  <link rel="stylesheet" href="./styles/tokens.css">
+  <link rel="stylesheet" href="./styles/report.css">
+</head>
+
+<body class="numbered">
+<main class="page">
+  <div class="prose">
+
+    <!-- ===== Document header ===== -->
+    <header class="doc-header">
+      <p class="eyebrow">Technical Report</p>
+      <h1>A Clear, Specific Report Title</h1>
+      <p class="lead">A one- or two-sentence lead that states the result up front:
+      what was done, what was found, and why it matters. Lead with the conclusion.</p>
+      <div class="meta">
+        <span><b>Author</b> Your Name</span>
+        <span><b>Date</b> 2026-06-13</span>
+        <span><b>Status</b> Draft</span>
+        <span><b>Reading time</b> ~6 min</span>
+      </div>
+    </header>
+
+    <!-- ===== Key figures (optional) ===== -->
+    <div class="stats">
+      <div class="stat"><div class="value accent">3.2×</div><div class="label">Throughput gain</div></div>
+      <div class="stat"><div class="value accent2">−41%</div><div class="label">Cost per token</div></div>
+      <div class="stat"><div class="value">0.93</div><div class="label">Quality retained</div></div>
+      <div class="stat"><div class="value">128k</div><div class="label">Context window</div></div>
+    </div>
+
+    <!-- ===== Body ===== -->
+    <h2>Background</h2>
+    <p>Body text sits on a constrained measure (~72 characters) for comfortable
+    reading. Use <strong>strong</strong> for emphasis, <em>italics</em> sparingly,
+    and inline <code>code</code> for identifiers, flags, and values. Link to
+    <a href="#">supporting material</a> rather than pasting long URLs.</p>
+
+    <p>Keep paragraphs short. Prefer concrete numbers and named entities over
+    vague qualifiers — this is a scientific document, not a brochure.</p>
+
+    <div class="callout note">
+      <span class="label">Note</span>
+      <p>Use callouts to surface assumptions, caveats, or definitions without
+      breaking the narrative flow. Variants: <code>note</code> (blue),
+      <code>good</code> (green), <code>warn</code>, <code>danger</code>.</p>
+    </div>
+
+    <h2>Method</h2>
+    <p>Describe the setup precisely enough to reproduce. Reference code blocks
+    where helpful:</p>
+<pre><code>def distill(teacher, student, data, T=2.0):
+    soft = teacher.logits(data) / T
+    loss = kl_div(student.logits(data) / T, soft)
+    return loss * (T ** 2)</code></pre>
+
+    <p>Ordered steps read cleanly as lists:</p>
+    <ol>
+      <li>Collect teacher logits on the calibration set.</li>
+      <li>Train the student against soft targets at temperature <code>T</code>.</li>
+      <li>Evaluate on held-out tasks and report the quality/cost frontier.</li>
+    </ol>
+
+    <h2>Results</h2>
+    <p>Lead each figure with what the reader should take from it, then show it.
+    The chart below is themed automatically from the design tokens.</p>
+
+    <figure>
+      <div class="chart"><div id="chart-loss"></div></div>
+      <figcaption><b>Figure 1.</b> Validation loss across distillation
+      temperatures. Lower is better; the muted-blue trace (T=2.0) dominates the
+      frontier after step 400.</figcaption>
+    </figure>
+
+    <p>Tables use tabular numerals and right-aligned numeric columns for easy
+    scanning:</p>
+
+    <div class="table-wrap">
+      <table>
+        <caption><b>Table 1.</b> Cost/quality across student sizes.</caption>
+        <thead>
+          <tr><th>Model</th><th class="num">Params</th><th class="num">Quality</th><th class="num">$/1M tok</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Teacher</td><td class="num">70B</td><td class="num">1.00</td><td class="num">15.00</td></tr>
+          <tr><td>Student-L</td><td class="num">8B</td><td class="num">0.96</td><td class="num">2.10</td></tr>
+          <tr><td>Student-M</td><td class="num">3B</td><td class="num">0.93</td><td class="num">0.80</td></tr>
+          <tr><td>Student-S</td><td class="num">1B</td><td class="num">0.87</td><td class="num">0.30</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout good">
+      <span class="label">Takeaway</span>
+      <p>Student-M retains 93% of teacher quality at ~5% of the cost — the
+      recommended operating point for the harness.</p>
+    </div>
+
+    <h2>Discussion</h2>
+    <blockquote>Quotations and notable prior results sit in a quiet, italic
+    block with a colored rule — present but not loud.</blockquote>
+
+    <p>Wrap up by restating the result and naming the next step. Keep the
+    structure flat and the prose direct.</p>
+
+    <!-- ===== Footer ===== -->
+    <footer class="doc-footer">
+      <p>Generated with the report kit · <a href="./index.html">All reports</a> ·
+      Source on <a href="#">GitHub</a></p>
+    </footer>
+
+  </div>
+</main>
+
+<!-- ===== Chart script: Observable Plot, themed from tokens ===== -->
+<script type="module">
+  import * as Plot from "https://cdn.jsdelivr.net/npm/@observablehq/plot/+esm";
+  import { themed } from "./styles/plot-theme.js";
+
+  // Demo data — replace with your own (or load via fetch from ./data/*.json).
+  const series = [];
+  for (let step = 0; step <= 800; step += 50) {
+    series.push({ step, loss: 1.6 * Math.exp(-step / 260) + 0.18, T: "T=2.0" });
+    series.push({ step, loss: 1.6 * Math.exp(-step / 200) + 0.30, T: "T=1.0" });
+  }
+
+  document.querySelector("#chart-loss").append(
+    Plot.plot(themed({
+      height: 320,
+      y: { label: "val loss", grid: true, tickSize: 0 },
+      x: { label: "step" },
+      marks: [
+        Plot.lineY(series, { x: "step", y: "loss", stroke: "T", strokeWidth: 2 }),
+        Plot.dot(series.filter(d => d.step % 200 === 0),
+                 { x: "step", y: "loss", fill: "T", r: 3 }),
+      ],
+    }))
+  );
+</script>
+</body>
+</html>

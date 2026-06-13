@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Distill-Harness — Phase 1+2 Results (GSM8K)</title>
+  <meta name="description" content="A cost-driven harness found a 19% cheaper model on GSM8K than the prior production model.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital@0;1&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../styles/tokens.css">
+  <link rel="stylesheet" href="../styles/report.css">
+</head>
+
+<body class="numbered">
+<main class="page">
+  <div class="prose">
+
+    <header class="doc-header">
+      <p class="eyebrow">Technical Report · Distill-Harness</p>
+      <h1>Finding a Cheaper Model the Boring Way</h1>
+      <p class="lead">A cost-driven optimization harness searched a space of small
+      open models and transforms on GSM8K and found a <b>19% cost reduction</b> over
+      the prior production model. The winner came from a pretrained swap, not from
+      our own distillation.</p>
+      <div class="meta">
+        <span><b>Run</b> First end-to-end, GSM8K</span>
+        <span><b>Date</b> 2026-05-23</span>
+        <span><b>Status</b> Snapshot</span>
+        <span><b>Candidates</b> 10 evaluated</span>
+      </div>
+    </header>
+
+    <div class="stats">
+      <div class="stat"><div class="value accent">−19%</div><div class="label">$/Mtok vs prior winner</div></div>
+      <div class="stat"><div class="value accent2">$0.058</div><div class="label">Winner cost / Mtok</div></div>
+      <div class="stat"><div class="value">0.752</div><div class="label">Winner quality (thr. 0.70)</div></div>
+      <div class="stat"><div class="value">n=1000</div><div class="label">Eval set size per candidate</div></div>
+    </div>
+
+    <h2>The result</h2>
+    <p>Both tiers of the harness were built and proven end-to-end: a <b>fast tier</b>
+    (model swaps, quantization) and a <b>slow tier</b> (QLoRA distillation). On GSM8K,
+    the harness surfaced <code>DeepSeek-R1-Distill-Qwen-1.5B</code> at
+    <b>$0.058/Mtok</b> clearing the 0.70 quality threshold — beating the previous
+    <code>Qwen2.5-7B-Instruct</code> winner at $0.072/Mtok. The full cost/quality
+    landscape across all ten candidates:</p>
+
+    <figure>
+      <div class="chart"><div id="chart-pareto"></div></div>
+      <figcaption><b>Figure 1.</b> Cost vs. quality for every evaluated candidate.
+      Up and to the left is better. The dashed rule marks the 0.70 quality threshold;
+      points below it are disqualified regardless of cost. The
+      <span style="color:var(--accent-2)">green</span> point is the winner; the
+      <span style="color:var(--accent)">blue</span> points form the rest of the
+      Pareto frontier; muted points are dominated.</figcaption>
+    </figure>
+
+    <div class="callout good">
+      <span class="label">Takeaway</span>
+      <p>The cheapest model that clears quality isn't the smallest or the one we
+      trained — it's a <em>pretrained distill</em> someone else already paid to
+      produce. The fast-tier swap found the win the slow tier couldn't.</p>
+    </div>
+
+    <h2>Full leaderboard</h2>
+    <p>All ten candidates, quality-descending. Frontier members are the
+    cost-optimal choice at their quality level; everything else is dominated.</p>
+
+    <div class="table-wrap">
+      <table>
+        <caption><b>Table 1.</b> Evaluated candidates on GSM8K (n=1000). Quality is
+        exact-match accuracy; cost is $/Mtok of useful output.</caption>
+        <thead>
+          <tr><th>Candidate</th><th class="num">Quality</th><th class="num">$/Mtok</th><th>GPU</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Qwen2.5-7B-Instruct</td><td class="num">0.907</td><td class="num">0.072</td><td>A100-40GB</td><td>frontier</td></tr>
+          <tr><td>Qwen2.5-7B-Instruct / awq-int4</td><td class="num">0.890</td><td class="num">0.136</td><td>A10G</td><td>dominated</td></tr>
+          <tr><td><b>DeepSeek-R1-Distill-Qwen-1.5B</b></td><td class="num">0.752</td><td class="num">0.058</td><td>L4</td><td>winner</td></tr>
+          <tr><td>Qwen2.5-1.5B-Instruct</td><td class="num">0.650</td><td class="num">0.029</td><td>L4</td><td>frontier</td></tr>
+          <tr><td>Qwen2.5-1.5B + our QLoRA (1617)</td><td class="num">0.643</td><td class="num">0.063</td><td>L4</td><td>dominated</td></tr>
+          <tr><td>Qwen2.5-1.5B + our QLoRA (9415)</td><td class="num">0.633</td><td class="num">0.059</td><td>L4</td><td>dominated</td></tr>
+          <tr><td>Qwen2.5-3B-Instruct / awq-int4</td><td class="num">0.618</td><td class="num">0.067</td><td>A10G</td><td>dominated</td></tr>
+          <tr><td>Qwen2.5-1.5B-Instruct / awq-int4</td><td class="num">0.616</td><td class="num">0.055</td><td>L4</td><td>dominated</td></tr>
+          <tr><td>Qwen2.5-3B-Instruct</td><td class="num">0.551</td><td class="num">0.061</td><td>A10G</td><td>dominated</td></tr>
+          <tr><td>Qwen2.5-0.5B-Instruct</td><td class="num">0.406</td><td class="num">0.018</td><td>L4</td><td>frontier</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2>Findings worth keeping</h2>
+
+    <h3>Pretrained distills beat home-grown distillation</h3>
+    <p>Our QLoRA attempt on <code>Qwen2.5-1.5B</code> (500 examples, rank 32, 3 epochs)
+    reached 0.643 — below even the 0.650 cold baseline, and at higher cost.
+    <code>DeepSeek-R1-Distill-Qwen-1.5B</code>, the same parameter count, hits 0.752
+    because DeepSeek spent vastly more compute distilling R1 reasoning into it than a
+    500-example LoRA ever could.</p>
+    <div class="callout note">
+      <span class="label">Rule</span>
+      <p>Before running expensive home-grown distillation, survey HF Hub for
+      task-relevant pretrained distills and add them as candidates first.</p>
+    </div>
+
+    <h3>AWQ wins are memory-bound, not universal</h3>
+    <p>AWQ-INT4 on Qwen-7B routed to an A10G cost <b>$0.136/Mtok</b> vs <b>$0.072</b>
+    for BF16 on A100-40GB — the A100 was 3.4× faster, swamping its 1.9× higher hourly
+    rate. Quantization only saves money when memory pressure forces the baseline onto
+    a more expensive GPU class. The cost-optimal pick is <em>not</em> always the
+    smallest GPU that fits.</p>
+
+    <h3>Eval size materially changes the cost model</h3>
+    <p>At n=200, vLLM startup overhead dominated wall time and inflated $/Mtok by
+    10–40%, sometimes flipping the ordering. Bumping to n=1000 amortized startup and
+    stabilized costs. Rule of thumb: generation time should dominate container
+    startup + model load — ≥500 examples for a 7B, ≥1000 for smaller models.</p>
+
+    <h3>LoRA-at-runtime doubles wall time</h3>
+    <p>The same 1.5B base went from 41s to 81s for 1000 examples once the LoRA adapter
+    was applied as a runtime delta — pushing $0.029 to $0.063/Mtok. The fix
+    (<code>peft.merge_and_unload()</code> to fold the adapter in, then serve as a
+    vanilla checkpoint) wasn't implemented; it's the first thing to add.</p>
+
+    <h2>Limitations &amp; next steps</h2>
+    <p>Methodological improvements, ranked by expected value per unit effort:</p>
+    <ol>
+      <li><b>Merge LoRA after training</b> (<code>peft.merge_and_unload()</code>).
+      Folding the adapter into the base avoids the runtime-delta penalty, letting a
+      home-grown 1.5B distill compete at $0.029 instead of $0.063/Mtok.</li>
+      <li><b>More teacher data</b> — the distillation run used only 500 examples.
+      More data plus completion-only loss and merged inference may push a home-grown
+      1.5B past the 0.75 mark.</li>
+      <li><b>More fast-tier actions</b>: Wanda pruning, prompt compression,
+      speculative-decoder pairing.</li>
+      <li><b>A better task than GSM8K</b> — structured extraction, narrow
+      classification, tool-use formatting: no off-the-shelf distills exist and the
+      frontier-API → distilled-1.5B cost gap is largest there.</li>
+      <li><b>Latency-aware cost model</b> — adding a latency term would unseat the
+      "thinking" DeepSeek model for real-time use cases.</li>
+    </ol>
+
+    <footer class="doc-footer">
+      <p>Generated with the report kit · <a href="../index.html">All reports</a></p>
+    </footer>
+
+  </div>
+</main>
+
+<script type="module">
+  import * as Plot from "https://cdn.jsdelivr.net/npm/@observablehq/plot/+esm";
+  import { themed } from "../styles/plot-theme.js";
+
+  // Real Phase 1+2 leaderboard (GSM8K, n=1000).
+  const data = [
+    { c: "Qwen2.5-7B",            q: 0.907, cost: 0.072, cat: "Frontier",  label: "7B" },
+    { c: "Qwen2.5-7B awq",        q: 0.890, cost: 0.136, cat: "Dominated", label: "" },
+    { c: "DeepSeek-R1-1.5B",      q: 0.752, cost: 0.058, cat: "Winner",    label: "R1-1.5B (winner)" },
+    { c: "Qwen2.5-1.5B",          q: 0.650, cost: 0.029, cat: "Frontier",  label: "1.5B" },
+    { c: "1.5B + our QLoRA",      q: 0.643, cost: 0.063, cat: "Dominated", label: "" },
+    { c: "1.5B + our QLoRA b",    q: 0.633, cost: 0.059, cat: "Dominated", label: "" },
+    { c: "Qwen2.5-3B awq",        q: 0.618, cost: 0.067, cat: "Dominated", label: "" },
+    { c: "Qwen2.5-1.5B awq",      q: 0.616, cost: 0.055, cat: "Dominated", label: "" },
+    { c: "Qwen2.5-3B",            q: 0.551, cost: 0.061, cat: "Dominated", label: "" },
+    { c: "Qwen2.5-0.5B",          q: 0.406, cost: 0.018, cat: "Frontier",  label: "0.5B" },
+  ];
+
+  document.querySelector("#chart-pareto").append(
+    Plot.plot(themed({
+      height: 400,
+      marginLeft: 56,
+      x: { label: "cost ($/Mtok) →", domain: [0, 0.15], tickFormat: "$.3f" },
+      y: { label: "↑ quality (exact match)", domain: [0.35, 0.95], grid: true, tickSize: 0 },
+      // Winner green, frontier blue, dominated muted — set explicitly.
+      color: {
+        domain: ["Winner", "Frontier", "Dominated"],
+        range: ["var(--accent-2)", "var(--accent)", "var(--text-faint)"],
+        legend: true,
+      },
+      marks: [
+        Plot.ruleY([0.70], { stroke: "var(--text-muted)", strokeDasharray: "4 4" }),
+        Plot.text([{ x: 0.145, y: 0.71 }], { x: "x", y: "y", text: ["quality threshold 0.70"],
+          fill: "var(--text-muted)", fontSize: 11, textAnchor: "end", dy: -4 }),
+        Plot.dot(data, { x: "cost", y: "q", fill: "cat", r: 6, stroke: "var(--bg)", strokeWidth: 1 }),
+        Plot.text(data, { x: "cost", y: "q", text: "label", fill: "var(--text)",
+          fontSize: 12, dy: -12, textAnchor: "start", dx: 6 }),
+      ],
+    }))
+  );
+</script>
+</body>
+</html>

@@ -1,0 +1,88 @@
+/* ============================================================
+   tokens.css — the single source of truth for the look & feel.
+   Aesthetic: dark, matte, muted, scientific. Legibility first.
+
+   Change the palette/fonts HERE and every report updates.
+   Nothing in this file styles elements — only declares variables.
+   ============================================================ */
+
+:root {
+  color-scheme: dark;
+
+  /* ---- Surfaces (layered darks; never pure black) -------- */
+  --bg:            #0e1217;  /* page base                      */
+  --bg-elevated:   #151b22;  /* cards, callouts, table headers  */
+  --bg-inset:      #0a0e12;  /* code blocks, wells, insets      */
+  --bg-hover:      #1b222b;  /* row/link hover                  */
+
+  /* ---- Lines & borders ----------------------------------- */
+  --border:        #232b35;
+  --border-strong: #303b48;
+
+  /* ---- Text (off-white; never pure #fff, for matte feel) - */
+  --text:          #d6dde6;  /* body copy                       */
+  --text-strong:   #eef2f7;  /* headings, emphasis              */
+  --text-muted:    #97a2b1;  /* captions, secondary, axis labels*/
+  --text-faint:    #69748a;  /* metadata, footnotes             */
+
+  /* ---- Accents (muted blue primary, muted green secondary)  */
+  --accent:        #6ea7d0;  /* primary — muted blue            */
+  --accent-hover:  #8ab9dc;
+  --accent-soft:   #1e2c39;  /* blue-tinted surface (callouts)  */
+  --accent-line:   #34536b;  /* blue-tinted border              */
+
+  --accent-2:      #79b487;  /* secondary — muted green         */
+  --accent-2-soft: #1d2a22;  /* green-tinted surface            */
+  --accent-2-line: #36513e;
+
+  /* ---- Semantic (kept muted to match the palette) -------- */
+  --warn:          #cda35c;
+  --warn-soft:     #2c2616;
+  --danger:        #cf7f7b;
+  --danger-soft:   #2c1b1b;
+  --link:          var(--accent);
+
+  /* ---- Typography ---------------------------------------- *
+   * IBM Plex: technical provenance, highly legible, distinctive
+   * without being flashy — reads "scientific", not "marketing".
+   * Loaded via <link> in the HTML <head>.                     */
+  --font-sans:  "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-serif: "IBM Plex Serif", Georgia, "Times New Roman", serif;
+  --font-mono:  "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* Type scale — 1.20 (minor third), base 17px. Restrained. */
+  --fs-xs:   0.78rem;   /* 13px — metadata, footnotes          */
+  --fs-sm:   0.88rem;   /* 15px — captions, table cells        */
+  --fs-base: 1.0625rem; /* 17px — body                         */
+  --fs-lg:   1.22rem;   /* 21px — lead paragraph               */
+  --fs-h3:   1.38rem;
+  --fs-h2:   1.72rem;
+  --fs-h1:   2.30rem;
+
+  --lh-tight: 1.25;     /* headings                            */
+  --lh-body:  1.66;     /* body — generous for screen reading  */
+
+  --fw-normal: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+
+  /* ---- Spacing scale (rem) ------------------------------- */
+  --sp-1: 0.25rem;
+  --sp-2: 0.5rem;
+  --sp-3: 0.75rem;
+  --sp-4: 1rem;
+  --sp-5: 1.5rem;
+  --sp-6: 2rem;
+  --sp-7: 3rem;
+  --sp-8: 4.5rem;
+
+  /* ---- Structure ----------------------------------------- */
+  --measure: 72ch;      /* max readable line length            */
+  --content-max: 50rem; /* main column width                   */
+  --wide-max: 64rem;    /* for figures/tables that need room   */
+  --radius: 6px;
+  --radius-sm: 4px;
+
+  /* Matte: shadows are faint and low-contrast. No glossy glow. */
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
