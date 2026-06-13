@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Distribution Narrowing Under Synthetic Data Contamination</title>
+  <meta name="description" content="A multi-seed GPT-2 study: synthetic-data contamination collapses what a model generates long before what it comprehends — until training pressure runs deep enough to break the pretrained buffer.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital@0;1&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="../styles/tokens.css">
+  <link rel="stylesheet" href="../styles/report.css">
+  <style>
+    /* Inline SVG chart helpers — drawn in currentColor (off-white on dark),
+       so they inherit the report theme automatically. */
+    .fig-svg { display: block; width: 100%; height: auto; }
+    .axis        { stroke: currentColor; stroke-opacity: 0.30; stroke-width: 1; fill: none; }
+    .gridline    { stroke: currentColor; stroke-opacity: 0.10; stroke-width: 1; fill: none; }
+    .tick-label  { font-family: var(--font-sans); font-size: 11px;   fill: currentColor; fill-opacity: 0.6; }
+    .axis-label  { font-family: var(--font-sans); font-size: 12px;   fill: currentColor; fill-opacity: 0.7; }
+    .series-label{ font-family: var(--font-sans); font-size: 11px;   fill: currentColor; fill-opacity: 0.85; }
+    .legend-label{ font-family: var(--font-sans); font-size: 11.5px; fill: currentColor; fill-opacity: 0.75; }
+    .annotation  { font-family: var(--font-sans); font-size: 11px;   fill: currentColor; fill-opacity: 0.6; font-style: italic; }
+
+    /* Benchmark example list */
+    .examples { background: var(--bg-elevated); border: 1px solid var(--border);
+                border-radius: var(--radius); padding: var(--sp-2) var(--sp-5);
+                margin: var(--sp-4) 0; font-size: var(--fs-sm); }
+    .examples ul { list-style: none; padding-left: 0; margin: 0; }
+    .examples li { padding: var(--sp-3) 0; border-bottom: 1px solid var(--border); margin: 0; }
+    .examples li:last-child { border-bottom: none; }
+    .examples .ex-context { color: var(--text); }
+    .examples .ex-context em { font-style: normal; color: var(--accent); padding: 0 3px; }
+    .examples .ex-meta { display: block; font-size: var(--fs-xs); color: var(--text-muted); margin-top: 3px; }
+    .examples .ex-meta strong { color: var(--text-strong); }
+  </style>
+</head>
+
+<body>
+<main class="page">
+  <div class="prose">
+
+    <header class="doc-header">
+      <p class="eyebrow">Research · Model Collapse</p>
+      <h1>Distribution narrowing under synthetic data contamination</h1>
+      <p class="lead">Does training a language model on its own previous outputs erode
+      its ability to comprehend genuinely novel constructions — the slang, neologisms,
+      and rhetorical patterns that postdate its training cutoff? A multi-seed GPT-2 study.
+      The headline: at moderate contamination, what models <em>generate</em> collapses
+      long before what they <em>comprehend</em> does. The asymmetry only breaks when
+      training pressure runs deep enough to overwrite pretrained representations.</p>
+      <div class="meta">
+        <span><b>Date</b> 2026-05-06</span>
+        <span><b>Model</b> GPT-2 124M</span>
+        <span><b>Repo</b> <a href="https://github.com/anatu/linguistic-degradation" target="_blank" rel="noopener">anatu/linguistic-degradation</a></span>
+        <span><b>Preprint</b> <a href="https://github.com/anatu/linguistic-degradation/blob/main/report/main.pdf" target="_blank" rel="noopener">PDF</a></span>
+      </div>
+    </header>
+
+    <div class="stats">
+      <div class="stat"><div class="value">51</div><div class="label">novel-construction benchmark items</div></div>
+      <div class="stat"><div class="value">0–100%</div><div class="label">contamination range tested</div></div>
+      <div class="stat"><div class="value accent">−90%</div><div class="label">gen. diversity at 100% (gen 2)</div></div>
+      <div class="stat"><div class="value accent2">−2.17</div><div class="label">nat novel-LP decline (deep train)</div></div>
+    </div>
+
+    <h2>The question</h2>
+    <p>Shumailov et al. (2024) showed that recursive training on synthetic data degrades
+    language models — perplexity climbs, generated text collapses to repetition. The
+    mechanism they describe is distributional: each generation samples from the previous
+    model's distribution, the tails get truncated, and the supported region of the
+    distribution shrinks.</p>
+    <p>My hypothesis was stronger: if the supported distribution narrows, then
+    <strong>linguistic innovations that fall outside the narrowing distribution should
+    become harder to comprehend</strong>, not just harder to produce. A model trained on
+    enough synthetic data should lose the ability to make sense of slang it wasn't
+    exposed to, ironic constructions that subvert literal meaning, or AAVE syntax it
+    didn't see often enough.</p>
+    <p>This is a structural prediction, not a scaling one. It would mean post-2023 LLMs
+    trained on web-scraped data already polluted with synthetic text are accumulating a
+    comprehension gap for genuinely novel language — a gap that no amount of additional
+    training on the same corpus can close.</p>
+
+    <h2>The benchmark</h2>
+    <p>To test this, I built a 51-item benchmark of post-2018 English constructions across
+    five categories: novel slang, creative neologisms, code-switching, rhetorical
+    subversion, and pragmatic inference. Each item is a multiple-choice cloze with a
+    critical span that defines the construction.</p>
+    <div class="examples">
+      <ul>
+        <li>
+          <span class="ex-context">When she saw the price tag, she said 'that's a whole <em>___</em>'</span>
+          <span class="ex-meta">Answer: <strong>mood</strong> · novel slang · emphatic reaction expression (2018+)</span>
+        </li>
+        <li>
+          <span class="ex-context">I spent the whole night <em>___</em>-scrolling through bad news and now I can't sleep</span>
+          <span class="ex-meta">Answer: <strong>doom</strong> · creative neologism · doom-scrolling (2020+)</span>
+        </li>
+        <li>
+          <span class="ex-context">Not me <em>___</em> at 3am on a Tuesday thinking about my ex</span>
+          <span class="ex-meta">Answer: <strong>crying</strong> · rhetorical subversion · self-deprecating ironic confession (2019+)</span>
+        </li>
+        <li>
+          <span class="ex-context">I've been <em>___</em> that since before it was cool, you're just late</span>
+          <span class="ex-meta">Answer: <strong>knew</strong> · novel slang · AAVE stressed BIN (completive aspect)</span>
+        </li>
+      </ul>
+    </div>
+    <p>Multiple-choice accuracy turned out to be too coarse a metric — GPT-2 124M answers
+    from token-frequency priors and gets ~30–37% across all conditions regardless of
+    contamination. The real signal lives in the model's log-probability assignment to the
+    construction-defining critical span. So the primary metric is the <strong>log-prob
+    gap</strong>: mean log-probability of standard text minus mean log-probability of the
+    novel critical spans. A widening gap means the model finds novel constructions
+    disproportionately harder than ordinary text.</p>
+
+    <h2>Setup</h2>
+    <p>GPT-2 124M fine-tuned on WikiText-103 with synthetic contamination injected at 0%,
+    10%, 25%, 50%, and 100%. "100%" means fine-tuning entirely on text generated by the
+    previous-generation model — the strongest possible distillation pressure. Three
+    generations per arm, three seeds per condition, evaluated on novelty log-prob gap,
+    validation perplexity, and Distinct-N generation diversity. Two training-depth
+    regimes:</p>
+    <ul>
+      <li><strong>V2 (shallow):</strong> 500 fine-tuning steps. Probes whether
+      contamination registers at all.</li>
+      <li><strong>V4 (deep):</strong> 5000 steps, plus an aggressive-LR variant
+      (1e-4 vs 5e-5). Stress-tests whether the pretrained representations can be
+      overwritten.</li>
+    </ul>
+
+    <h2>Finding 1 — Generation diversity collapses early and severely</h2>
+    <p>The first thing to break is the model's output vocabulary. Even 10% synthetic
+    contamination cuts unigram diversity nearly in half by the first contaminated
+    generation. At 100% contamination, the model is generating near-repetitive text by
+    generation 2.</p>
+
+    <figure>
+      <div class="chart">
+      <svg class="fig-svg" viewBox="0 0 720 340" role="img" aria-label="Line chart showing Distinct-1 generation diversity collapsing across generations under increasing contamination ratios">
+        <g class="gridline">
+          <line x1="60" y1="40" x2="600" y2="40"/>
+          <line x1="60" y1="100" x2="600" y2="100"/>
+          <line x1="60" y1="160" x2="600" y2="160"/>
+          <line x1="60" y1="220" x2="600" y2="220"/>
+          <line x1="60" y1="280" x2="600" y2="280"/>
+        </g>
+        <g class="tick-label" text-anchor="end">
+          <text x="54" y="44">0.5</text>
+          <text x="54" y="104">0.4</text>
+          <text x="54" y="164">0.3</text>
+          <text x="54" y="224">0.2</text>
+          <text x="54" y="284">0.1</text>
+          <text x="54" y="324">0.0</text>
+        </g>
+        <line class="axis" x1="60" y1="320" x2="600" y2="320"/>
+        <line class="axis" x1="60" y1="40" x2="60" y2="320"/>
+        <g class="tick-label" text-anchor="middle">
+          <text x="60" y="338">Gen 0</text>
+          <text x="330" y="338">Gen 1</text>
+          <text x="600" y="338">Gen 2</text>
+        </g>
+        <text class="axis-label" x="20" y="180" transform="rotate(-90 20 180)" text-anchor="middle">Distinct-1</text>
+
+        <g fill="none" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+          <polyline stroke="currentColor" stroke-opacity="0.30" points="60,84 330,85 600,83"/>
+          <polyline stroke="currentColor" stroke-opacity="0.45" points="60,82 330,174 600,159"/>
+          <polyline stroke="currentColor" stroke-opacity="0.65" points="60,83 330,186 600,230"/>
+          <polyline stroke="currentColor" stroke-opacity="0.85" points="60,84 330,215 600,235"/>
+          <polyline stroke="var(--accent)" stroke-width="2" points="60,85 330,260 600,298"/>
+        </g>
+
+        <g>
+          <circle cx="60" cy="84" r="2.5" fill="currentColor" fill-opacity="0.30"/>
+          <circle cx="330" cy="85" r="2.5" fill="currentColor" fill-opacity="0.30"/>
+          <circle cx="600" cy="83" r="2.5" fill="currentColor" fill-opacity="0.30"/>
+          <circle cx="60" cy="82" r="2.5" fill="currentColor" fill-opacity="0.45"/>
+          <circle cx="330" cy="174" r="2.5" fill="currentColor" fill-opacity="0.45"/>
+          <circle cx="600" cy="159" r="2.5" fill="currentColor" fill-opacity="0.45"/>
+          <circle cx="60" cy="83" r="2.5" fill="currentColor" fill-opacity="0.65"/>
+          <circle cx="330" cy="186" r="2.5" fill="currentColor" fill-opacity="0.65"/>
+          <circle cx="600" cy="230" r="2.5" fill="currentColor" fill-opacity="0.65"/>
+          <circle cx="60" cy="84" r="2.5" fill="currentColor" fill-opacity="0.85"/>
+          <circle cx="330" cy="215" r="2.5" fill="currentColor" fill-opacity="0.85"/>
+          <circle cx="600" cy="235" r="2.5" fill="currentColor" fill-opacity="0.85"/>
+          <circle cx="60" cy="85" r="3" fill="var(--accent)"/>
+          <circle cx="330" cy="260" r="3" fill="var(--accent)"/>
+          <circle cx="600" cy="298" r="3" fill="var(--accent)"/>
+        </g>
+
+        <g class="series-label">
+          <text x="610" y="86" fill-opacity="0.6">0%</text>
+          <text x="610" y="162" fill-opacity="0.7">10%</text>
+          <text x="610" y="233" fill-opacity="0.7">25%</text>
+          <text x="610" y="220" fill-opacity="0.85">50%</text>
+          <text x="610" y="301" fill="var(--accent)" font-weight="600">100%</text>
+        </g>
+      </svg>
+      </div>
+      <figcaption><b>Figure 1.</b> Distinct-1 generation diversity by contamination ratio
+      over three generations. The clean baseline (0%) is perfectly stable. Even 10%
+      synthetic contamination cuts diversity in half by generation 1. At 100% contamination
+      (<span style="color:var(--accent)">accent</span>), the model collapses to
+      near-repetitive output by generation 2. This is the cleanest, earliest signal of
+      distribution narrowing.</figcaption>
+    </figure>
+
+    <h2>Finding 2 — The generation–comprehension asymmetry</h2>
+    <p>Here's the surprise. At shallow fine-tuning (500 steps), the log-prob gap between
+    standard and novel text widens monotonically with contamination, exactly as the
+    hypothesis predicted. But when you decompose the gap into its two halves — what's
+    happening to standard text vs. what's happening to novel text — the picture changes.</p>
+    <p>At 10–50% contamination, <strong>only standard text moves</strong>. The model gets
+    more confident on in-distribution language, while its log-probability for novel
+    constructions stays essentially flat. The gap widens because one side is rising, not
+    because the other side is falling. The model isn't losing competence on novel
+    language — it's gaining specialization on contaminated language and leaving novel
+    constructions untouched.</p>
+
+    <figure>
+      <div class="chart">
+      <svg class="fig-svg" viewBox="0 0 720 360" role="img" aria-label="Chart showing change in log-probability for standard vs novel text under increasing contamination ratios">
+        <g class="gridline">
+          <line x1="80" y1="50" x2="640" y2="50"/>
+          <line x1="80" y1="110" x2="640" y2="110"/>
+          <line x1="80" y1="170" x2="640" y2="170"/>
+          <line x1="80" y1="230" x2="640" y2="230"/>
+          <line x1="80" y1="290" x2="640" y2="290"/>
+        </g>
+        <line x1="80" y1="230" x2="640" y2="230" stroke="currentColor" stroke-opacity="0.35" stroke-dasharray="3,3"/>
+        <g class="tick-label" text-anchor="end">
+          <text x="74" y="54">+0.9</text>
+          <text x="74" y="114">+0.6</text>
+          <text x="74" y="174">+0.3</text>
+          <text x="74" y="234">0</text>
+          <text x="74" y="294">&minus;0.3</text>
+        </g>
+        <line class="axis" x1="80" y1="320" x2="640" y2="320"/>
+        <line class="axis" x1="80" y1="40" x2="80" y2="320"/>
+        <g class="tick-label" text-anchor="middle">
+          <text x="80" y="338">0%</text>
+          <text x="220" y="338">10%</text>
+          <text x="360" y="338">25%</text>
+          <text x="500" y="338">50%</text>
+          <text x="640" y="338">100%</text>
+        </g>
+        <text class="axis-label" x="360" y="354" text-anchor="middle">Contamination ratio</text>
+        <text class="axis-label" x="20" y="180" transform="rotate(-90 20 180)" text-anchor="middle">&Delta; log-prob from baseline</text>
+
+        <g stroke="var(--accent)" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="80,230 220,209 360,197 500,176 640,92"/>
+        </g>
+        <g fill="var(--accent)">
+          <circle cx="80" cy="230" r="3.5"/>
+          <circle cx="220" cy="209" r="3.5"/>
+          <circle cx="360" cy="197" r="3.5"/>
+          <circle cx="500" cy="176" r="3.5"/>
+          <circle cx="640" cy="92" r="3.5"/>
+        </g>
+
+        <g stroke="currentColor" fill="none" stroke-width="1.4" stroke-opacity="0.55" stroke-dasharray="5,4" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="80,230 220,239 360,236 500,234 640,273"/>
+        </g>
+        <g stroke="currentColor" stroke-width="1.4" stroke-opacity="0.7" fill="var(--bg-elevated)">
+          <circle cx="80" cy="230" r="3"/>
+          <circle cx="220" cy="239" r="3"/>
+          <circle cx="360" cy="236" r="3"/>
+          <circle cx="500" cy="234" r="3"/>
+          <circle cx="640" cy="273" r="3"/>
+        </g>
+
+        <g class="series-label">
+          <text x="640" y="80" text-anchor="end" fill="var(--accent)" font-weight="600">Standard text &uarr; (easier)</text>
+          <text x="640" y="290" text-anchor="end" fill-opacity="0.7">Novel text (~unchanged)</text>
+        </g>
+        <text class="annotation" x="500" y="150" text-anchor="middle">asymmetry breaks</text>
+        <text class="annotation" x="500" y="164" text-anchor="middle">at 100%</text>
+      </svg>
+      </div>
+      <figcaption><b>Figure 2.</b> Change in mean log-probability after one generation of
+      contaminated fine-tuning, by contamination ratio (V2, 500 steps). Standard text gets
+      monotonically easier as contamination rises (<span style="color:var(--accent)">accent</span>
+      line). Novel-construction log-prob stays essentially flat through 50% contamination
+      (dashed line). The gap widens, but only because one side moves — the model isn't
+      losing competence on novel language, just gaining specialization on contaminated
+      language. At 100% the asymmetry breaks and novel text genuinely degrades.</figcaption>
+    </figure>
+
+    <p>The dose-response also shows up directly in the raw log-prob gap, and in the partial
+    recovery at generation 2 — likely the model settling into a contaminated equilibrium:</p>
+
+    <div class="table-wrap">
+      <table>
+        <caption><b>Table 1.</b> Log-prob gap (standard − novel critical-span LP) by
+        contamination arm and generation (V2, 500 steps). Higher = novel text
+        disproportionately harder. The 0% control is flat by construction.</caption>
+        <thead>
+          <tr><th>Arm</th><th class="num">Gen 0</th><th class="num">Gen 1</th><th class="num">Gen 2</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>0% (control)</td><td class="num">0.489</td><td class="num">0.489</td><td class="num">0.489</td></tr>
+          <tr><td>10%</td><td class="num">0.489</td><td class="num">0.641</td><td class="num">0.597</td></tr>
+          <tr><td>25%</td><td class="num">0.489</td><td class="num">0.682</td><td class="num">0.616</td></tr>
+          <tr><td>50%</td><td class="num">0.489</td><td class="num">0.777</td><td class="num">0.647</td></tr>
+          <tr><td><b>100%</b></td><td class="num">0.489</td><td class="num"><b>1.390</b></td><td class="num"><b>1.129</b></td></tr>
+          <tr><td>Compound (25%)</td><td class="num">0.489</td><td class="num">0.682</td><td class="num">0.615</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>This is a real finding about what model collapse looks like in practice at moderate
+    contamination. <strong>Generation collapses much earlier than comprehension.</strong>
+    If you only watched output diversity, you'd see catastrophe at 10% contamination. If
+    you only measured comprehension log-probability for novel text, you'd see almost
+    nothing through 50%. The two failure modes have very different sensitivity curves.</p>
+
+    <h2>Finding 3 — Deeper training breaks the buffer</h2>
+    <p>The natural objection to the asymmetry result: maybe 500 fine-tuning steps just
+    isn't enough training pressure to overwrite GPT-2's pretrained representations. The
+    40GB of WebText the base model saw is acting as a buffer that protects
+    novel-construction comprehension regardless of what the contaminated fine-tune is
+    teaching.</p>
+    <p>V4 tested this directly: 10x longer fine-tuning (5000 steps) plus an aggressive-LR
+    variant (1e-4 vs the standard 5e-5) at 100% contamination. The buffer breaks.
+    Novel-text log-probability degrades monotonically across generations — a 2.17-nat
+    decline from baseline by gen 2.</p>
+
+    <figure>
+      <div class="chart">
+      <svg class="fig-svg" viewBox="0 0 720 340" role="img" aria-label="Chart comparing novel-text log-probability degradation under shallow vs deep training across three generations at 100% contamination">
+        <g class="gridline">
+          <line x1="80" y1="50" x2="640" y2="50"/>
+          <line x1="80" y1="110" x2="640" y2="110"/>
+          <line x1="80" y1="170" x2="640" y2="170"/>
+          <line x1="80" y1="230" x2="640" y2="230"/>
+          <line x1="80" y1="290" x2="640" y2="290"/>
+        </g>
+        <g class="tick-label" text-anchor="end">
+          <text x="74" y="54">&minus;6.0</text>
+          <text x="74" y="114">&minus;7.0</text>
+          <text x="74" y="174">&minus;8.0</text>
+          <text x="74" y="234">&minus;9.0</text>
+          <text x="74" y="294">&minus;10.0</text>
+        </g>
+        <line class="axis" x1="80" y1="320" x2="640" y2="320"/>
+        <line class="axis" x1="80" y1="40" x2="80" y2="320"/>
+        <g class="tick-label" text-anchor="middle">
+          <text x="80" y="338">Gen 0 (baseline)</text>
+          <text x="360" y="338">Gen 1</text>
+          <text x="640" y="338">Gen 2</text>
+        </g>
+        <text class="axis-label" x="20" y="180" transform="rotate(-90 20 180)" text-anchor="middle">Novel-text log-prob</text>
+
+        <g fill="none" stroke="currentColor" stroke-width="1.5" stroke-opacity="0.45" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="6,4">
+          <polyline points="80,105 360,116 640,108"/>
+        </g>
+        <g stroke="currentColor" stroke-width="1.4" stroke-opacity="0.55" fill="var(--bg-elevated)">
+          <circle cx="80" cy="105" r="3"/>
+          <circle cx="360" cy="116" r="3"/>
+          <circle cx="640" cy="108" r="3"/>
+        </g>
+
+        <g fill="none" stroke="currentColor" stroke-width="1.5" stroke-opacity="0.7" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="80,164 360,249 640,58"/>
+        </g>
+        <g fill="currentColor" fill-opacity="0.7">
+          <circle cx="80" cy="164" r="3"/>
+          <circle cx="360" cy="249" r="3"/>
+          <circle cx="640" cy="58" r="3"/>
+        </g>
+        <g class="annotation">
+          <text x="630" y="42" text-anchor="end">degenerate collapse</text>
+          <text x="630" y="56" text-anchor="end">(PPL 1413)</text>
+        </g>
+        <line x1="635" y1="60" x2="643" y2="58" stroke="currentColor" stroke-opacity="0.5" stroke-width="1"/>
+
+        <g fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="80,157 360,230 640,287"/>
+        </g>
+        <g fill="var(--accent)">
+          <circle cx="80" cy="157" r="3.5"/>
+          <circle cx="360" cy="230" r="3.5"/>
+          <circle cx="640" cy="287" r="3.5"/>
+        </g>
+
+        <g class="legend-label">
+          <line x1="100" y1="68" x2="130" y2="68" stroke="currentColor" stroke-width="1.5" stroke-opacity="0.45" stroke-dasharray="6,4"/>
+          <text x="138" y="71" fill-opacity="0.75">V2 &mdash; 500 steps (shallow)</text>
+          <line x1="100" y1="86" x2="130" y2="86" stroke="currentColor" stroke-width="1.5" stroke-opacity="0.7"/>
+          <text x="138" y="89" fill-opacity="0.75">V4 &mdash; 5000 steps, LR 5e-5</text>
+          <line x1="100" y1="104" x2="130" y2="104" stroke="var(--accent)" stroke-width="2"/>
+          <text x="138" y="107" fill="var(--accent)" fill-opacity="0.95" font-weight="600">V4 &mdash; 5000 steps, LR 1e-4 (aggressive)</text>
+        </g>
+      </svg>
+      </div>
+      <figcaption><b>Figure 3.</b> Novel-text log-probability across generations at 100%
+      contamination, three training regimes. Shallow fine-tuning (V2, dashed) barely moves
+      the needle — pretrained representations buffer the novel-construction signal. Deep
+      fine-tuning at standard LR (V4 primary) shows real degradation at gen 1 then
+      degenerate collapse at gen 2 (PPL hits 1413, log-prob scores become unreliable). Deep
+      fine-tuning at aggressive LR (<span style="color:var(--accent)">accent</span>) avoids
+      the collapse and shows monotonic 2.17-nat degradation — the cleanest evidence the
+      original hypothesis holds, given enough training pressure.</figcaption>
+    </figure>
+
+    <h2>A methodological wrinkle: degenerate collapse</h2>
+    <p>The V4 primary line above does something that initially looked like recovery:
+    novel-text log-prob bounces back from −9.32 at gen 1 to −6.13 at gen 2. It isn't
+    recovery. By gen 2 the model's validation perplexity has hit 1413 — it has lost most
+    of its discrimination and now assigns roughly uniform probability to everything,
+    including novel text. Standard text log-prob also shoots up (−5.73 → −4.65), confirming
+    that the model isn't getting better at language — it's getting worse at
+    distinguishing.</p>
+    <div class="callout warn">
+      <span class="label">Caveat</span>
+      <p><strong>Log-prob gap metrics become unreliable above PPL ~1400.</strong> Apparent
+      recovery at extreme contamination can actually indicate total model failure. Any
+      future work in this area needs a perplexity gate to filter degenerate runs.</p>
+    </div>
+    <p>A 0%-contamination control at the same aggressive LR confirms that this isn't just
+    overtraining: the control is perfectly stable across all three generations
+    (novel LP = −7.789 at every gen, validation PPL = 179.7). The degradation only happens
+    when training depth and synthetic contamination are both present.</p>
+
+    <h2>What this means</h2>
+    <p>The original hypothesis was: synthetic contamination should structurally damage a
+    model's ability to comprehend novel language. The result is more layered.</p>
+    <ul>
+      <li><strong>Distribution narrowing is real and dose-dependent.</strong> Generation
+      diversity collapses dramatically even at 10% contamination. The narrowing-distribution
+      premise of the model-collapse literature is unambiguously confirmed in this setup.</li>
+      <li><strong>At moderate contamination, comprehension is buffered.</strong> Pretrained
+      representations protect novel-text processing through 50% contamination at shallow
+      fine-tuning. The model becomes a specialist on contaminated language without losing
+      its grasp on novel constructions. The widening gap is one-sided.</li>
+      <li><strong>At sufficient training pressure, the buffer breaks.</strong> Either
+      extreme contamination (100%) or enough training depth (5000 steps + aggressive LR)
+      does damage novel-text comprehension. The strong version of the hypothesis is
+      supported, just narrower in scope than originally framed.</li>
+      <li><strong>Generation diversity is the earliest warning signal.</strong> If you're
+      monitoring a model for contamination effects, watch Distinct-N. Comprehension metrics
+      lag.</li>
+    </ul>
+    <div class="callout note">
+      <span class="label">Practical implication</span>
+      <p>A contaminated model can look fine on benchmarks while its output distribution is
+      already collapsing. The conventional "is the model still smart?" check — perplexity,
+      multiple-choice accuracy — misses the failure mode that matters most for downstream
+      language quality.</p>
+    </div>
+
+    <h2>Limitations and next steps</h2>
+    <ul>
+      <li><strong>Small model, narrow benchmark.</strong> GPT-2 124M was the only
+      architecture tested. The 51-item benchmark was hand-built; a larger benchmark with
+      paraphrased variants would test whether findings generalize across instantiations.</li>
+      <li><strong>Three generations.</strong> Shumailov-style collapse experiments use up
+      to 10 generations. The contamination effect appears to saturate quickly here, but
+      more generations might reveal slow-onset divergence.</li>
+      <li><strong>Single contamination source.</strong> All synthetic data came from the
+      previous-generation model in the same lineage. Mixing in synthetic text from
+      different model families would be a more realistic contamination simulation.</li>
+      <li><strong>Threshold sweep.</strong> The clearest open question is where between 50%
+      and 100% novel-text comprehension actually starts to degrade at moderate training
+      depth. A sweep at 60/70/80/90% would map the dose-response curve.</li>
+      <li><strong>Larger models.</strong> The pretrained-representation buffer may be much
+      harder to break in models with more parameters. A repeat at GPT-2-medium / large
+      scale would test whether the V4 result transfers.</li>
+    </ul>
+
+    <h2>Artifacts</h2>
+    <ul>
+      <li><a href="https://github.com/anatu/linguistic-degradation" target="_blank" rel="noopener">Source repo (anatu/linguistic-degradation)</a> — full code, plans, and per-experiment knowledge base.</li>
+      <li><a href="https://github.com/anatu/linguistic-degradation/blob/main/report/main.pdf" target="_blank" rel="noopener">Preprint (PDF)</a> — 18-page write-up in NeurIPS 2025 format.</li>
+      <li><a href="https://github.com/anatu/linguistic-degradation/blob/main/benchmark/novelty_examples.jsonl" target="_blank" rel="noopener">Benchmark (JSONL)</a> — 51 novel-construction cloze items with critical spans.</li>
+      <li><a href="https://github.com/anatu/linguistic-degradation/blob/main/results/all_results_v4.jsonl" target="_blank" rel="noopener">V4 multi-seed results (JSONL)</a> — raw per-seed metrics for the deep-training experiment.</li>
+    </ul>
+
+    <footer class="doc-footer">
+      <p>Generated with the report kit · <a href="../index.html">All reports</a></p>
+    </footer>
+
+  </div>
+</main>
+</body>
+</html>
