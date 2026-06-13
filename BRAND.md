@@ -11,6 +11,31 @@
 people — legibility and clean structure over visual flash. Think lab report or
 technical memo, not landing page.
 
+## The template is a palette, not a checklist
+
+`template.html` is a **library of components to draw from**, not a skeleton to
+fill in. Reuse the *design system* (tokens, themed elements, component
+vocabulary) every time — but let the **findings dictate the structure**, not the
+other way around.
+
+- **Never invent or backfill numbers to populate a component.** A `.stats` row
+  is only for genuine headline results a reader would actually quote — a
+  benchmark delta, a cost, a rate, an effect size. Setup parameters (sample
+  sizes, ranges, config values) are NOT headline stats. If the findings aren't
+  "number-shaped," omit the stat row entirely.
+- **Omit any component that doesn't fit.** No stat row, no chart, no table, no
+  callout unless the content genuinely calls for it. A clean 3-section report
+  with one figure can be the correct answer.
+- **Section order and emphasis follow the argument**, not the template. Lead
+  with the actual result; structure the rest around how the finding is best
+  explained.
+- **Match the form to the report type.** Dashboard/benchmark results are often
+  stat- and table-heavy; narrative/scientific arguments are usually prose +
+  a few decisive figures. Don't force one into the other's shape.
+
+The test: every element on the page should be there because the *content* needs
+it. If you added something because the template had a slot for it, remove it.
+
 ## Hard rules
 
 1. **Dark mode only.** Layered dark surfaces (`--bg`, `--bg-elevated`,

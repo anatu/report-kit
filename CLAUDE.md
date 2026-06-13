@@ -8,8 +8,12 @@ publishes directly to GitHub Pages — no npm, no build step, no framework.
 1. **Read `BRAND.md`** — it is the design contract. Follow it exactly.
 2. **Use the design tokens** in `styles/tokens.css`. Never hardcode colors,
    fonts, or spacing inline — reference CSS variables or the existing classes.
-3. **Copy `template.html`** as the starting point for a new report. It is also
-   the live style reference: every supported element/component appears there.
+3. **Treat `template.html` as a component palette, not a skeleton.** It shows
+   every available element so you can pick what fits — it is NOT a structure to
+   replicate top-to-bottom. Let the findings dictate which components appear and
+   in what order. **Do not fabricate or backfill numbers to fill a slot** (e.g.
+   a stat row of setup parameters); omit any component the content doesn't need.
+   See "The template is a palette, not a checklist" in `BRAND.md`.
 
 ## How to make a new report
 
