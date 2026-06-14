@@ -20,9 +20,9 @@
       <p class="eyebrow">Technical Report · Distill-Harness</p>
       <h1>Finding a Cheaper Model the Boring Way</h1>
       <p class="lead">A cost-driven optimization harness searched a space of small
-      open models and transforms on GSM8K and found a <b>19% cost reduction</b> over
-      the prior production model. The winner came from a pretrained swap, not from
-      our own distillation.</p>
+      open models and transforms on GSM8K and found a <b>19% cost reduction</b>
+      ($0.072 → $0.058 per Mtok) over the prior production model. The winner came
+      from a pretrained swap, not from our own distillation.</p>
       <div class="meta">
         <span><b>Run</b> First end-to-end, GSM8K</span>
         <span><b>Date</b> 2026-05-23</span>
@@ -39,12 +39,12 @@
     </div>
 
     <h2>The result</h2>
-    <p>Both tiers of the harness were built and proven end-to-end: a <b>fast tier</b>
-    (model swaps, quantization) and a <b>slow tier</b> (QLoRA distillation). On GSM8K,
-    the harness surfaced <code>DeepSeek-R1-Distill-Qwen-1.5B</code> at
-    <b>$0.058/Mtok</b> clearing the 0.70 quality threshold — beating the previous
-    <code>Qwen2.5-7B-Instruct</code> winner at $0.072/Mtok. The full cost/quality
-    landscape across all ten candidates:</p>
+    <p>On GSM8K, the harness surfaced <code>DeepSeek-R1-Distill-Qwen-1.5B</code> at
+    <b>$0.058/Mtok</b> — clearing the 0.70 quality threshold and beating the previous
+    <code>Qwen2.5-7B-Instruct</code> winner at $0.072/Mtok. We built and proved both
+    tiers end-to-end to get there: a <b>fast tier</b> (model swaps, quantization) and a
+    <b>slow tier</b> (QLoRA distillation). The full cost/quality landscape across all
+    ten candidates:</p>
 
     <figure>
       <div class="chart"><div id="chart-pareto"></div></div>
