@@ -14,7 +14,8 @@ report-kit/
 │   └── plot-theme.js   ← themed Observable Plot helper (charts match the palette)
 ├── template.html       ← base report + live style reference (the "kitchen sink")
 ├── index.html          ← landing page listing your reports
-├── BRAND.md            ← the design contract (the rules the aesthetic enforces)
+├── BRAND.md            ← visual design contract (the rules the aesthetic enforces)
+├── WRITING.md          ← prose contract (answer-first, concise, how to present numbers)
 ├── CLAUDE.md           ← instructions so Claude extends it in-style
 ├── new-report.sh       ← scaffold a new report from the template
 └── .github/workflows/deploy.yml  ← one-click GitHub Pages deploy

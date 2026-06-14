@@ -5,7 +5,10 @@ publishes directly to GitHub Pages — no npm, no build step, no framework.
 
 ## Before producing any deliverable
 
-1. **Read `BRAND.md`** — it is the design contract. Follow it exactly.
+1. **Read `BRAND.md`** (visual design contract) **and `WRITING.md`** (prose
+   contract). Follow both exactly — `BRAND.md` governs how it looks,
+   `WRITING.md` governs how it reads (answer-first structure, confident voice,
+   concision, how to present numbers).
 2. **Use the design tokens** in `styles/tokens.css`. Never hardcode colors,
    fonts, or spacing inline — reference CSS variables or the existing classes.
 3. **Treat `template.html` as a component palette, not a skeleton.** It shows
