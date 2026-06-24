@@ -63,11 +63,10 @@
     <header class="doc-header">
       <p class="eyebrow">Project Note · Living document</p>
       <h1>Lagrange: agentic loops as constrained optimization</h1>
-      <p class="lead">Lagrange treats an agent loop as constrained optimization —
-      maximize task success subject to explicit budgets and hard limits, each
-      constraint priced by a Lagrange multiplier the loop tunes as it runs. The
-      kernel is stdlib-only; a Claude Agent SDK backend and a checkpoint layer
-      sit on top. This page tracks the design and where it's going.</p>
+      <p class="lead">An agent loop as constrained optimization. Maximize task
+      success under explicit budgets. Each constraint is priced by a Lagrange
+      multiplier, tuned as the loop runs. Stdlib-only kernel; Claude backend and
+      checkpointing on top.</p>
       <div class="meta">
         <span><b>Author</b> natu</span>
         <span><b>Updated</b> 2026-06-24</span>
@@ -79,7 +78,7 @@
     <!-- ===== Changelog (top; updated regularly) ===== -->
     <section class="changelog">
       <h2>Changelog</h2>
-      <p>Newest first. This page is revised as the project moves.</p>
+      <p>Newest first. Revised as the project moves.</p>
       <div class="table-wrap">
         <table>
           <thead>
@@ -107,15 +106,14 @@
 
     <!-- ===== Thesis ===== -->
     <h2>Every agent loop is the same skeleton</h2>
-    <p>From AutoGPT through ReAct, Reflexion, Self-Refine, and GEPA, the structure
-    repeats: <strong>generate → evaluate → select → repeat</strong>. The only real
-    variables are where the scoring signal comes from and what decides "stop." The
-    universal failure mode is termination — letting the model decide it's "done"
-    in natural language, which drifts, loops, or over-refines.</p>
+    <p>AutoGPT, ReAct, Reflexion, Self-Refine, GEPA — one shape:
+    <strong>generate → evaluate → select → repeat</strong>. Two variables: where
+    the score comes from, and what stops the loop. The usual failure is
+    termination — the model decides it's "done" in prose, then drifts.</p>
 
-    <p>Lagrange makes those two things first-class. A loop is a small, explicit
-    state machine with pluggable slots; the kernel owns the parts every framework
-    gets wrong — convergence, constraints, budget, and observability.</p>
+    <p>Lagrange makes scoring and stopping first-class. The loop is an explicit
+    state machine with pluggable slots. The kernel owns convergence, constraints,
+    budget, and observability.</p>
 
     <figure class="diagram">
       <svg viewBox="0 0 720 150" role="img" aria-label="The loop cycle: step, score, constrain, verify, select, stop, with a feedback arc back to step.">
@@ -170,38 +168,36 @@
 
     <!-- ===== The framing ===== -->
     <h2>The name is literal: constraints carry a price</h2>
-    <p>A coding loop that maximizes success subject to budgets (tokens, cost,
-    wall-clock) and hard limits (tests must pass) <em>is</em> a constrained
-    optimization problem. Lagrange optimizes the Lagrangian directly:</p>
+    <p>A loop that maximizes success under budgets (tokens, cost, wall-clock) and
+    hard limits (tests pass) <em>is</em> constrained optimization. Lagrange
+    optimizes the Lagrangian directly:</p>
 
     <div class="eq">L = success <span class="muted">−</span> Σ<sub>i</sub> λ<sub>i</sub> <span class="muted">· max(0,</span> cost<sub>i</sub> <span class="muted">−</span> limit<sub>i</sub><span class="muted">)</span></div>
 
-    <p>Each constraint owns a multiplier λ — the price of violating it — updated
-    from measured violation by a small PID controller (the integral term alone is
-    classic dual ascent). The penalized objective feeds selection and plateau
-    detection, so over-budget candidates lose rank without being hard-banned.</p>
+    <p>Each constraint owns a multiplier λ — the price of violating it. A PID
+    controller updates λ from measured violation (integral term = dual ascent).
+    The penalized objective drives selection and plateau detection. Over-budget
+    candidates lose rank; they aren't hard-banned.</p>
 
     <div class="callout note">
       <span class="label">Honest about the metaphor</span>
-      <p>The constraint-pricing is literal and load-bearing. The full
-      controller-theory machinery (stability guarantees, auto-converging λ) is
-      not — λ is sensitive and task-dependent. Lagrange ships the controller and
-      Pareto-sweep tooling, not a promise that one knob auto-tunes itself.</p>
+      <p>Constraint-pricing is literal and load-bearing. The full
+      controller-theory machinery — stability guarantees, auto-converging λ — is
+      not. λ is sensitive and task-dependent. Lagrange ships the controller and
+      Pareto-sweep tooling, not a self-tuning knob.</p>
     </div>
 
     <!-- ===== The chart: real run ===== -->
     <h2>The controller engages, then relaxes</h2>
-    <p>On a toy hill-climb (drive <code>x</code> to 7.3, with each step's jump
-    constrained to ≤ 2.0), the loop converged in 35 iterations. The figure shows
-    the mechanism working: when the agent proposes a big jump, λ rises and the
-    penalized objective drops below the raw value; as steps shrink, λ relaxes
-    toward zero. This is real trace data, not an illustration.</p>
+    <p>Toy hill-climb: drive <code>x</code> to 7.3, each jump ≤ 2.0. Converged in
+    35 iterations. Big jump → λ rises → penalized objective drops below raw. Steps
+    shrink → λ relaxes to zero. Real trace data, not an illustration.</p>
 
     <figure>
       <div class="chart"><div id="chart-conv"></div></div>
-      <figcaption><b>Figure 2.</b> Raw objective (closeness to target, → 0) versus
-      the penalized objective. The gap is the live constraint penalty: where the
-      green trace dips below blue, a costly jump is being priced.</figcaption>
+      <figcaption><b>Figure 2.</b> Raw objective (closeness to target, → 0) vs
+      penalized. The gap is the live constraint penalty — where green dips below
+      blue, a costly jump is priced.</figcaption>
     </figure>
 
     <figure>
@@ -214,16 +210,14 @@
     <!-- ===== Stop algebra ===== -->
     <h2>The stop algebra refuses underspecified loops</h2>
     <p>Stopping is a composable algebra. Conditions combine with <code>|</code>;
-    the first to fire wins and records why, and whether that counts as
-    convergence.</p>
+    the first to fire wins and records why — and whether it converged.</p>
 
 <pre><code>stop = Success() | Plateau(patience=3) | Oscillation() | MaxIters(20)</code></pre>
 
-    <p>Every condition advertises two facts: whether it <em>can converge</em>
-    (success) and whether it <em>guarantees termination</em> (a hard cap). The
-    loop reads them and <strong>refuses to run a config that can't do both</strong>
-    — a loop that can only stop by exhausting its budget is the lineage's most
-    expensive anti-pattern.</p>
+    <p>Each condition declares two facts: can it <em>converge</em> (success), does
+    it <em>guarantee termination</em> (a hard cap). The loop
+    <strong>refuses a config that can't do both</strong>. A loop that only stops by
+    exhausting its budget is the lineage's costliest anti-pattern.</p>
 
     <div class="table-wrap">
       <table>
@@ -244,12 +238,11 @@
 
     <!-- ===== Claude backend ===== -->
     <h2>One query() call is one loop step</h2>
-    <p>The default backend drives a Claude agent. One Lagrange step is one
-    <code>query()</code> turn; the executor chains <code>session_id</code> across
-    iterations so context carries, and feeds a failing verdict back as the next
-    prompt — a Reflexion-style refine cycle on a real agent. Per-turn caps map to
-    the SDK's <code>max_turns</code> / <code>max_budget_usd</code>; each turn's
-    usage is recorded into the loop so <code>TokenBudget</code> /
+    <p>The default backend drives a Claude agent. One step = one
+    <code>query()</code> turn. The executor chains <code>session_id</code>, so
+    context carries. A failed verdict becomes the next prompt — a refine cycle.
+    Per-turn caps map to <code>max_turns</code> / <code>max_budget_usd</code>.
+    Per-turn usage feeds the loop, so <code>TokenBudget</code> /
     <code>CostBudget</code> bound the whole run.</p>
 
     <details class="disc">
@@ -275,34 +268,33 @@ loop = executor.build_loop(
 result = loop.run()             # result.best.payload.text == final agent output</code></pre>
     </details>
 
-    <p>Two verifier styles cover the spectrum. <code>CommandVerifier</code> runs a
-    real command and gates on the exit code — deterministic and
-    transcript-provable. <code>ClaudeJudge</code> is the actor/critic split: a
-    fresh, cheap model judges the agent's surfaced output. The judge can't run
-    tools, so the goal must be phrased to be provable from what the agent showed.</p>
+    <p>Two verifiers. <code>CommandVerifier</code> runs a command and gates on the
+    exit code — deterministic, transcript-provable. <code>ClaudeJudge</code> is
+    the actor/critic split: a fresh cheap model judges the agent's surfaced
+    output. It can't run tools, so the goal must be provable from what the agent
+    showed.</p>
 
     <!-- ===== Persistence ===== -->
     <h2>One checkpoint primitive: resume, time-travel, HITL</h2>
-    <p>Give a loop a <code>run_id</code> and a <code>Persister</code> and it
-    checkpoints every iteration. The same primitive serves three needs:</p>
+    <p>Give a loop a <code>run_id</code> and a <code>Persister</code>. It
+    checkpoints every iteration. One primitive, three uses:</p>
     <ul>
-      <li><strong>Crash recovery</strong> — restart, call <code>run()</code> again;
-      the loop restores iteration, archive, memory, λ state, usage, and the
+      <li><strong>Crash recovery</strong> — restart, call <code>run()</code> again.
+      The loop restores iteration, archive, memory, λ state, usage, and the
       agent's <code>session_id</code>, then continues.</li>
-      <li><strong>Time-travel</strong> — every iteration is kept;
-      <code>history(run_id)</code> lists them, <code>load(run_id, n)</code> loads any.</li>
+      <li><strong>Time-travel</strong> — every iteration is kept.
+      <code>history(run_id)</code> lists them; <code>load(run_id, n)</code> loads any.</li>
       <li><strong>Human-in-the-loop</strong> — a <code>Pause</code> condition
-      checkpoints and exits; release it and resume.</li>
+      checkpoints and exits. Release it and resume.</li>
     </ul>
-    <p>Two stores ship: <code>MemoryPersister</code> (in-process) and
+    <p>Two stores: <code>MemoryPersister</code> (in-process) and
     <code>SQLitePersister</code> (durable, stdlib-only, survives a crash). The
-    Claude executor auto-registers as a state provider, so the agent session is
-    checkpointed without extra wiring.</p>
+    Claude executor auto-registers as a state provider — the agent session is
+    checkpointed with no extra wiring.</p>
 
     <!-- ===== Next steps ===== -->
     <h2>Next steps</h2>
-    <p>Near-term work, roughly in priority order. This list is the backlog the
-    changelog draws down.</p>
+    <p>Near-term work, in priority order. The backlog the changelog draws down.</p>
 
     <div class="table-wrap">
       <table>
