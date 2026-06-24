@@ -86,7 +86,7 @@
           </thead>
           <tbody>
             <tr><td>2026-06-24</td><td><span class="tag">doc</span></td>
-              <td>Reworked the worked example into a concrete LLM coding loop: fix a failing test suite under a diff-size constraint.</td></tr>
+              <td>Worked example is now a real run: a Claude agent fixes a failing suite under a diff budget (12 → 10 → 8 lines, 3 turns, $0.74). Charts show live telemetry.</td></tr>
             <tr><td>2026-06-24</td><td><span class="tag">v0.3</span></td>
               <td>Persistence layer — checkpoint, resume, time-travel, and human-in-the-loop pause via one primitive.</td></tr>
             <tr><td>2026-06-24</td><td><span class="tag">v0.2</span></td>
@@ -190,22 +190,22 @@
     </div>
 
     <!-- ===== Worked LLM example ===== -->
-    <h2>Worked example: fix the tests without rewriting the project</h2>
-    <p>A coding agent fixes a failing test suite. The goal: <code>pytest</code>
-    passes. The constraint: change at most 40 lines. This is the real failure mode
-    Lagrange targets — a frontier agent told only "make the tests pass" will
-    over-edit, rewrite files it shouldn't, or game the gate by deleting failing
-    tests. The diff constraint caps the blast radius and the verifier holds the
-    line.</p>
+    <h2>Worked example: pass the tests within a diff budget</h2>
+    <p>A Claude coding agent fixes a failing test suite under a diff budget. The
+    goal is not just "tests pass" — it's "tests pass while changing at most 8
+    lines." That split is the point. The agent passed all 6 tests on turn 1, but
+    with a 12-line diff. The constraint kept the loop going until the change fit
+    the budget: 12 → 10 → 8 lines over three turns. Real run, throwaway repo,
+    $0.74 total.</p>
 
     <div class="callout warn">
       <span class="label">Why explicit constraints, not a prompt</span>
       <p>"Keep the change small" in the system prompt is advice the model can
-      rationalize away. A constraint is a measured number with a price: the diff
-      is counted every turn, surfaced to the agent, and used to rank candidates —
-      and it's logged, so you can audit why a run did what it did. A deterministic
-      verifier (tests pass, and the test count didn't drop) is the hard gate the
-      model can't talk its way past.</p>
+      rationalize away. A constraint is a measured number: the diff is counted
+      every turn, written into the next prompt, and logged for audit. Here it is
+      also a hard gate — convergence requires tests pass <em>and</em> diff ≤
+      budget — so the agent can't declare victory at turn 1 with a sprawling
+      edit, and can't game the gate by editing the tests.</p>
     </div>
 
     <div class="table-wrap">
@@ -215,16 +215,16 @@
           <tr><th>Component</th><th>In this example</th></tr>
         </thead>
         <tbody>
-          <tr><td>Goal</td><td>make <code>pytest</code> pass in the target repo</td></tr>
+          <tr><td>Goal</td><td>make <code>pytest</code> pass within an 8-line diff</td></tr>
           <tr><td><code>step</code> (generate)</td><td>one Claude turn (<code>query()</code>); the session resumes, so context carries across turns</td></tr>
           <tr><td><code>objective</code> → value</td><td>fraction of tests passing (0 → 1)</td></tr>
           <tr><td><code>objective</code> → metric</td><td><code>diff = lines changed</code> (<code>git diff --numstat</code>) — the cost the constraint watches</td></tr>
-          <tr><td>Constraint</td><td><code>diff ≤ 40</code> lines</td></tr>
-          <tr><td>λ (multiplier)</td><td>price of exceeding the diff cap; PID controller, <code>ki = 0.003</code></td></tr>
-          <tr><td>Feedback</td><td>each turn's diff and the cap are written into the next prompt — that is how the constraint reaches the model</td></tr>
-          <tr><td><code>verify</code> (hard gate)</td><td><code>CommandVerifier</code> runs <code>pytest -q</code>; success = exit 0</td></tr>
-          <tr><td><code>stop</code></td><td><code>Success() | Plateau(patience=3)</code></td></tr>
-          <tr><td>Budget (hard cap)</td><td>8 turns or $5.00</td></tr>
+          <tr><td>Constraint</td><td><code>diff ≤ 8</code> lines</td></tr>
+          <tr><td>λ (multiplier)</td><td>price of exceeding the budget; PID controller, <code>ki = 0.05</code></td></tr>
+          <tr><td>Feedback</td><td>each turn's diff and the budget are written into the next prompt — how the constraint reaches the model</td></tr>
+          <tr><td><code>verify</code> (hard gate)</td><td>custom: all tests pass <em>and</em> diff ≤ 8</td></tr>
+          <tr><td><code>stop</code></td><td><code>Success() | Plateau(patience=4)</code></td></tr>
+          <tr><td>Budget (hard cap)</td><td>6 turns or $6.00</td></tr>
         </tbody>
       </table>
     </div>
@@ -233,63 +233,75 @@
       <summary>Show the full configuration</summary>
 <pre><code>from lagrange import Budget, Constraint, Score
 from lagrange.constraint import LambdaController
+from lagrange.core import Verdict
 from lagrange.backends.claude import ClaudeExecutor
 from lagrange.stop import Success, Plateau
-from lagrange.verify import CommandVerifier
+from lagrange.verify import Verifier
 
-REPO = "/path/to/project"
+REPO, CAP = "/path/to/project", 8.0
 
 def objective(turn, ctx):              # score: value + the metric to constrain
     passed, total = run_pytest(REPO)   # parse pytest -> (passed, total)
     diff = changed_lines(REPO)         # git diff --numstat -> int
     return Score(value=passed / total, metrics={"diff": float(diff)})
 
+class TestsAndBudget(Verifier):        # convergence = tests pass AND diff <= cap
+    def verify(self, candidate, ctx):
+        passed, total = run_pytest(REPO)
+        diff = changed_lines(REPO)
+        ok = passed == total and diff &lt;= CAP
+        return Verdict(passed=ok, detail=f"pytest {passed}/{total}, diff {diff}/{int(CAP)}")
+
 def refine(s):                         # surface the constraint to the agent
-    diff = s.ctx.last_candidate.score.metrics["diff"]
-    return (f"Tests still failing. Your change touched {diff} lines; the cap is "
-            f"40. Make the smallest change that makes pytest pass — do not delete "
-            f"or weaken tests.")
+    m = s.ctx.last_candidate.score
+    diff = int(m.metrics["diff"])
+    if m.value &lt; 1.0:
+        return f"Tests still failing. Fix stats.py; diff budget is {int(CAP)} (at {diff})."
+    return (f"All tests pass, but your diff is {diff} lines; the budget is {int(CAP)}. "
+            f"Make the edits minimal — no rewrites or extra helpers. Do not edit the tests.")
 
 executor = ClaudeExecutor(
-    task="Fix the failing tests in this repo. Run `pytest -q` to confirm.",
-    goal="pytest passes", cwd=REPO,
+    task="Fix the bugs in stats.py so the test suite passes.",
+    goal="pytest passes within an 8-line diff budget", cwd=REPO,
     allowed_tools=["Read", "Edit", "Bash", "Glob", "Grep"],
-    refine=refine, per_step_max_turns=30,
+    refine=refine, per_step_max_turns=12,
 )
 
 loop = executor.build_loop(
     objective=objective,
-    verifier=CommandVerifier(lambda _: ["pytest", "-q"], cwd=REPO),
-    constraints=[Constraint("diff", limit=40.0,
-                            controller=LambdaController(ki=0.003))],
-    stop=Success() | Plateau(patience=3),
-    budget=Budget(max_iters=8, max_cost_usd=5.0),
+    verifier=TestsAndBudget(),
+    constraints=[Constraint("diff", limit=CAP,
+                            controller=LambdaController(ki=0.05))],
+    stop=Success() | Plateau(patience=4),
+    budget=Budget(max_iters=6, max_cost_usd=6.0),
 )
-result = loop.run()</code></pre>
+result = loop.run()                    # converged in 3 turns, $0.74</code></pre>
     </details>
 
-    <p>What happens over the run: the first turn over-edits (95 lines), so λ rises
-    and that candidate is demoted; the next prompt tells the agent its diff and the
-    cap. The agent narrows its edits turn over turn. By turn 5 the diff is under 40
-    and <code>pytest</code> passes — the goal met without a sprawling rewrite.</p>
+    <p>What happened: turn 1 fixed every test but changed 12 lines, over the budget,
+    so the gate held and λ rose. The next prompt told the agent its diff and the
+    budget. It tightened to 10 lines, then to 8 — the budget — and the loop
+    converged. The naive goal ("tests pass") was met at turn 1; the constrained
+    goal took three.</p>
 
-    <div class="callout note">
-      <span class="label">Illustrative run</span>
-      <p>The agent telemetry below is representative, not a live API capture. The
-      λ trajectory is computed by the real controller from that telemetry.</p>
+    <div class="callout good">
+      <span class="label">Real run</span>
+      <p>Live <code>claude-agent-sdk</code> against a throwaway git repo (a stats
+      module with 6 failing tests). Three turns, $0.74, converged. The figures
+      below are that run's telemetry — diff and λ measured per turn.</p>
     </div>
 
     <figure>
-      <div class="chart"><div id="chart-tests"></div></div>
-      <figcaption><b>Figure 2.</b> Tests passing (fraction, → 1.0) over turns. The
-      goal is reached at turn 5.</figcaption>
+      <div class="chart"><div id="chart-diff"></div></div>
+      <figcaption><b>Figure 2.</b> Lines changed per turn against the 8-line budget
+      (dashed). Tests passed from turn 1; the agent drove the diff down to the
+      budget over three turns.</figcaption>
     </figure>
 
     <figure>
-      <div class="chart"><div id="chart-diff"></div></div>
-      <figcaption><b>Figure 3.</b> Lines changed per turn against the 40-line cap
-      (dashed). Early turns blow past it; the λ controller (peak ≈ 0.22) prices the
-      churn, and the diff falls under the cap by turn 4.</figcaption>
+      <div class="chart"><div id="chart-lambda"></div></div>
+      <figcaption><b>Figure 3.</b> The multiplier λ over the run. It rises while the
+      diff sits over budget — the standing price of the violation. Peak λ ≈ 0.30.</figcaption>
     </figure>
 
     <!-- ===== Stop algebra ===== -->
@@ -426,36 +438,36 @@ result = loop.run()             # result.best.payload.text == final agent output
 
   const data = await fetch("../data/lagrange-coding.json").then(r => r.json());
   const rows = data.rows;
+  const cap = data.limit;
 
-  // Figure 2 — tests passing over turns.
-  document.querySelector("#chart-tests").append(
-    Plot.plot(themed({
-      height: 260,
-      x: { label: "turn", ticks: rows.map(d => d.turn) },
-      y: { label: "tests passing (fraction)", grid: true, tickSize: 0,
-           domain: [0, 1] },
-      marks: [
-        Plot.ruleY([1], { strokeOpacity: 0.35 }),
-        Plot.lineY(rows, { x: "turn", y: "tests", strokeWidth: 2 }),
-        Plot.dot(rows, { x: "turn", y: "tests", r: 3, fill: "currentColor" }),
-      ],
-    }))
-  );
-
-  // Figure 3 — diff size per turn against the cap.
+  // Figure 2 — diff size per turn against the budget.
   document.querySelector("#chart-diff").append(
     Plot.plot(themed({
       height: 280,
       x: { label: "turn", ticks: rows.map(d => d.turn) },
-      y: { label: "lines changed", grid: true, tickSize: 0 },
+      y: { label: "lines changed", grid: true, tickSize: 0, domain: [0, 14] },
       marks: [
-        Plot.ruleY([data.limit], { strokeDasharray: "4 4", strokeOpacity: 0.7 }),
+        Plot.ruleY([cap], { strokeDasharray: "4 4", strokeOpacity: 0.7 }),
         Plot.areaY(rows, { x: "turn", y: "diff", fillOpacity: 0.15 }),
         Plot.lineY(rows, { x: "turn", y: "diff", strokeWidth: 2 }),
-        Plot.dot(rows, { x: "turn", y: "diff", r: 3, fill: "currentColor" }),
-        Plot.text([{ turn: rows[0].turn, diff: data.limit }],
-                  { x: "turn", y: "diff", text: () => "cap = 40", dy: -8,
-                    textAnchor: "start", fill: "currentColor", fillOpacity: 0.7 }),
+        Plot.dot(rows, { x: "turn", y: "diff", r: 3.5, fill: "currentColor" }),
+        Plot.text([{ turn: rows[rows.length - 1].turn, diff: cap }],
+                  { x: "turn", y: "diff", text: () => `budget = ${cap}`, dy: -8,
+                    textAnchor: "end", fill: "currentColor", fillOpacity: 0.7 }),
+      ],
+    }))
+  );
+
+  // Figure 3 — the multiplier over the run.
+  document.querySelector("#chart-lambda").append(
+    Plot.plot(themed({
+      height: 240,
+      x: { label: "turn", ticks: rows.map(d => d.turn) },
+      y: { label: "λ (price of over-budget diff)", grid: true, tickSize: 0 },
+      marks: [
+        Plot.areaY(rows, { x: "turn", y: "lambda", fillOpacity: 0.18 }),
+        Plot.lineY(rows, { x: "turn", y: "lambda", strokeWidth: 2 }),
+        Plot.dot(rows, { x: "turn", y: "lambda", r: 3.5, fill: "currentColor" }),
       ],
     }))
   );

@@ -1,42 +1,31 @@
 {
-"limit": 40.0,
-"converged_turn": 5,
+"limit": 8.0,
+"converged": true,
+"reason": "success",
+"converged_turn": 3,
+"total_cost_usd": 0.737,
+"peak_lambda": 0.3,
 "rows": [
 {
 "turn": 1,
-"tests": 0.33,
-"diff": 95,
-"cost": 0.28,
-"lambda": 0.165
+"tests": 1.0,
+"diff": 12,
+"cost": 0.171,
+"lambda": 0.2
 },
 {
 "turn": 2,
-"tests": 0.67,
-"diff": 58,
-"cost": 0.22,
-"lambda": 0.219
+"tests": 1.0,
+"diff": 10,
+"cost": 0.2842,
+"lambda": 0.3
 },
 {
 "turn": 3,
-"tests": 0.5,
-"diff": 41,
-"cost": 0.19,
-"lambda": 0.222
-},
-{
-"turn": 4,
-"tests": 0.83,
-"diff": 30,
-"cost": 0.17,
-"lambda": 0.192
-},
-{
-"turn": 5,
 "tests": 1.0,
-"diff": 23,
-"cost": 0.15,
-"lambda": 0.141
+"diff": 8,
+"cost": 0.2817,
+"lambda": 0.3
 }
-],
-"peak_lambda": 0.222
+]
 }
