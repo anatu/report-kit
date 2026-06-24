@@ -31,6 +31,9 @@
     figure.diagram { background: var(--bg-elevated); border: 1px solid var(--border);
       border-radius: var(--radius); padding: var(--sp-5) var(--sp-4); }
     .diagram svg { width: 100%; height: auto; display: block; }
+    /* Safety net: charts never exceed their container, whatever the JS does. */
+    .chart { overflow: hidden; }
+    .chart svg { max-width: 100%; height: auto; }
     .diagram .node { fill: var(--bg-inset); stroke: var(--border-strong); }
     .diagram .node-label { fill: var(--text-strong); font-family: var(--font-mono);
       font-size: 13px; }
@@ -439,38 +442,42 @@ result = loop.run()             # result.best.payload.text == final agent output
   const data = await fetch("../data/lagrange-coding.json").then(r => r.json());
   const rows = data.rows;
   const cap = data.limit;
+  const turns = rows.map(d => d.turn);
+  const intTurn = { label: "turn →", ticks: turns, tickFormat: d => `${d}` };
+
+  // Render each chart at its container's real width so the SVG never exceeds
+  // the column, and redraw on resize. Avoids the fixed-width overflow.
+  function render(sel, height, marks, opts = {}) {
+    const el = document.querySelector(sel);
+    if (!el) return;
+    const draw = () => {
+      const w = Math.max(260, Math.floor(el.getBoundingClientRect().width));
+      el.replaceChildren(Plot.plot(themed({
+        width: w, height, x: intTurn, ...opts, marks,
+      })));
+    };
+    draw();
+    if (typeof ResizeObserver !== "undefined") new ResizeObserver(draw).observe(el);
+  }
 
   // Figure 2 — diff size per turn against the budget.
-  document.querySelector("#chart-diff").append(
-    Plot.plot(themed({
-      height: 280,
-      x: { label: "turn", ticks: rows.map(d => d.turn) },
-      y: { label: "lines changed", grid: true, tickSize: 0, domain: [0, 14] },
-      marks: [
-        Plot.ruleY([cap], { strokeDasharray: "4 4", strokeOpacity: 0.7 }),
-        Plot.areaY(rows, { x: "turn", y: "diff", fillOpacity: 0.15 }),
-        Plot.lineY(rows, { x: "turn", y: "diff", strokeWidth: 2 }),
-        Plot.dot(rows, { x: "turn", y: "diff", r: 3.5, fill: "currentColor" }),
-        Plot.text([{ turn: rows[rows.length - 1].turn, diff: cap }],
-                  { x: "turn", y: "diff", text: () => `budget = ${cap}`, dy: -8,
-                    textAnchor: "end", fill: "currentColor", fillOpacity: 0.7 }),
-      ],
-    }))
-  );
+  render("#chart-diff", 280, [
+    Plot.ruleY([cap], { strokeDasharray: "4 4", strokeOpacity: 0.7 }),
+    Plot.areaY(rows, { x: "turn", y: "diff", fillOpacity: 0.15 }),
+    Plot.lineY(rows, { x: "turn", y: "diff", strokeWidth: 2 }),
+    Plot.dot(rows, { x: "turn", y: "diff", r: 3.5, fill: "currentColor" }),
+    Plot.text([{ turn: turns[turns.length - 1], diff: cap }],
+              { x: "turn", y: "diff", text: () => `budget = ${cap}`, dy: -8,
+                textAnchor: "end", fill: "currentColor", fillOpacity: 0.7 }),
+  ], { y: { label: "lines changed", grid: true, tickSize: 0, domain: [0, 14] } });
 
   // Figure 3 — the multiplier over the run.
-  document.querySelector("#chart-lambda").append(
-    Plot.plot(themed({
-      height: 240,
-      x: { label: "turn", ticks: rows.map(d => d.turn) },
-      y: { label: "λ (price of over-budget diff)", grid: true, tickSize: 0 },
-      marks: [
-        Plot.areaY(rows, { x: "turn", y: "lambda", fillOpacity: 0.18 }),
-        Plot.lineY(rows, { x: "turn", y: "lambda", strokeWidth: 2 }),
-        Plot.dot(rows, { x: "turn", y: "lambda", r: 3.5, fill: "currentColor" }),
-      ],
-    }))
-  );
+  render("#chart-lambda", 240, [
+    Plot.areaY(rows, { x: "turn", y: "lambda", fillOpacity: 0.18 }),
+    Plot.lineY(rows, { x: "turn", y: "lambda", strokeWidth: 2 }),
+    Plot.dot(rows, { x: "turn", y: "lambda", r: 3.5, fill: "currentColor" }),
+  ], { y: { label: "λ (price of over-budget diff)", grid: true, tickSize: 0,
+            domain: [0, 0.35] } });
 </script>
 </body>
 </html>
