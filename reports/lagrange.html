@@ -85,6 +85,8 @@
             <tr><th>Date</th><th>Version</th><th>Change</th></tr>
           </thead>
           <tbody>
+            <tr><td>2026-06-24</td><td><span class="tag">doc</span></td>
+              <td>Reworked the worked example into a concrete LLM coding loop: fix a failing test suite under a diff-size constraint.</td></tr>
             <tr><td>2026-06-24</td><td><span class="tag">v0.3</span></td>
               <td>Persistence layer — checkpoint, resume, time-travel, and human-in-the-loop pause via one primitive.</td></tr>
             <tr><td>2026-06-24</td><td><span class="tag">v0.2</span></td>
@@ -187,12 +189,24 @@
       Pareto-sweep tooling, not a self-tuning knob.</p>
     </div>
 
-    <!-- ===== The chart: real run ===== -->
-    <h2>The controller engages, then relaxes</h2>
-    <p>A worked example, end to end. The task: find a number <code>x</code> equal
-    to 7.3. The catch: each guess may move at most 2.0 from the last one. No LLM —
-    a minimal loop that isolates the constraint mechanism. Every slot from Figure 1
-    and the Lagrangian above is filled in below.</p>
+    <!-- ===== Worked LLM example ===== -->
+    <h2>Worked example: fix the tests without rewriting the project</h2>
+    <p>A coding agent fixes a failing test suite. The goal: <code>pytest</code>
+    passes. The constraint: change at most 40 lines. This is the real failure mode
+    Lagrange targets — a frontier agent told only "make the tests pass" will
+    over-edit, rewrite files it shouldn't, or game the gate by deleting failing
+    tests. The diff constraint caps the blast radius and the verifier holds the
+    line.</p>
+
+    <div class="callout warn">
+      <span class="label">Why explicit constraints, not a prompt</span>
+      <p>"Keep the change small" in the system prompt is advice the model can
+      rationalize away. A constraint is a measured number with a price: the diff
+      is counted every turn, surfaced to the agent, and used to rank candidates —
+      and it's logged, so you can audit why a run did what it did. A deterministic
+      verifier (tests pass, and the test count didn't drop) is the hard gate the
+      model can't talk its way past.</p>
+    </div>
 
     <div class="table-wrap">
       <table>
@@ -201,69 +215,81 @@
           <tr><th>Component</th><th>In this example</th></tr>
         </thead>
         <tbody>
-          <tr><td>Goal</td><td>drive <code>x</code> to the target 7.3</td></tr>
-          <tr><td><code>step</code> (generate)</td><td>propose a new <code>x</code> near the best so far; the move shrinks as λ rises</td></tr>
-          <tr><td><code>objective</code> → value</td><td><code>−|x − 7.3|</code> — closeness to target; 0 is exact, higher is better</td></tr>
-          <tr><td><code>objective</code> → metric</td><td><code>jump = |x − previous x|</code> — the cost the constraint watches</td></tr>
-          <tr><td>Constraint</td><td><code>jump ≤ 2.0</code></td></tr>
-          <tr><td>λ (multiplier)</td><td>price of exceeding the jump limit; PID controller, <code>ki = 0.3</code></td></tr>
-          <tr><td>Penalized objective</td><td><code>value − λ · max(0, jump − 2.0)</code> — what selection ranks on</td></tr>
-          <tr><td><code>stop</code> (converge)</td><td><code>ValueThreshold(−0.05)</code> — within 0.05 of target, or a 30-step plateau</td></tr>
-          <tr><td>Budget (hard cap)</td><td>400 iterations</td></tr>
+          <tr><td>Goal</td><td>make <code>pytest</code> pass in the target repo</td></tr>
+          <tr><td><code>step</code> (generate)</td><td>one Claude turn (<code>query()</code>); the session resumes, so context carries across turns</td></tr>
+          <tr><td><code>objective</code> → value</td><td>fraction of tests passing (0 → 1)</td></tr>
+          <tr><td><code>objective</code> → metric</td><td><code>diff = lines changed</code> (<code>git diff --numstat</code>) — the cost the constraint watches</td></tr>
+          <tr><td>Constraint</td><td><code>diff ≤ 40</code> lines</td></tr>
+          <tr><td>λ (multiplier)</td><td>price of exceeding the diff cap; PID controller, <code>ki = 0.003</code></td></tr>
+          <tr><td>Feedback</td><td>each turn's diff and the cap are written into the next prompt — that is how the constraint reaches the model</td></tr>
+          <tr><td><code>verify</code> (hard gate)</td><td><code>CommandVerifier</code> runs <code>pytest -q</code>; success = exit 0</td></tr>
+          <tr><td><code>stop</code></td><td><code>Success() | Plateau(patience=3)</code></td></tr>
+          <tr><td>Budget (hard cap)</td><td>8 turns or $5.00</td></tr>
         </tbody>
       </table>
     </div>
 
     <details class="disc">
       <summary>Show the full configuration</summary>
-<pre><code>from lagrange import Budget, Constraint, LagrangeLoop, Score
+<pre><code>from lagrange import Budget, Constraint, Score
 from lagrange.constraint import LambdaController
-from lagrange.stop import ValueThreshold, Plateau
+from lagrange.backends.claude import ClaudeExecutor
+from lagrange.stop import Success, Plateau
+from lagrange.verify import CommandVerifier
 
-TARGET = 7.3
+REPO = "/path/to/project"
 
-def step(s):                       # generate: propose the next x
-    if s.best is None:
-        return random_start()
-    reach = 4.0 / (1.0 + s.ctx.lambdas.get("jump", 0.0))   # back off as λ rises
-    return s.best.payload + random_move(reach)
+def objective(turn, ctx):              # score: value + the metric to constrain
+    passed, total = run_pytest(REPO)   # parse pytest -> (passed, total)
+    diff = changed_lines(REPO)         # git diff --numstat -> int
+    return Score(value=passed / total, metrics={"diff": float(diff)})
 
-def objective(payload, ctx):       # score: value + the metric to constrain
-    err  = abs(payload - TARGET)
-    prev = ctx.best().payload if ctx.best() else payload
-    jump = abs(payload - prev)
-    return Score(value=-err, metrics={"jump": jump})
+def refine(s):                         # surface the constraint to the agent
+    diff = s.ctx.last_candidate.score.metrics["diff"]
+    return (f"Tests still failing. Your change touched {diff} lines; the cap is "
+            f"40. Make the smallest change that makes pytest pass — do not delete "
+            f"or weaken tests.")
 
-loop = LagrangeLoop(
-    goal="drive x to target",
-    step=step,
-    objective=objective,
-    constraints=[Constraint("jump", limit=2.0,
-                            controller=LambdaController(ki=0.3))],
-    stop=ValueThreshold(-0.05) | Plateau(patience=30),
-    budget=Budget(max_iters=400),
+executor = ClaudeExecutor(
+    task="Fix the failing tests in this repo. Run `pytest -q` to confirm.",
+    goal="pytest passes", cwd=REPO,
+    allowed_tools=["Read", "Edit", "Bash", "Glob", "Grep"],
+    refine=refine, per_step_max_turns=30,
 )
-result = loop.run()                # converged in 35 iterations, x ≈ 7.34</code></pre>
+
+loop = executor.build_loop(
+    objective=objective,
+    verifier=CommandVerifier(lambda _: ["pytest", "-q"], cwd=REPO),
+    constraints=[Constraint("diff", limit=40.0,
+                            controller=LambdaController(ki=0.003))],
+    stop=Success() | Plateau(patience=3),
+    budget=Budget(max_iters=8, max_cost_usd=5.0),
+)
+result = loop.run()</code></pre>
     </details>
 
-    <p>What happens over the run: a big jump exceeds the limit, so λ rises and the
-    penalized objective drops below the raw value. That demotes the candidate, so
-    <code>step</code> takes smaller moves. As the moves stay under the limit, λ
-    decays back toward zero. Converged in 35 iterations. Real trace data, not an
-    illustration. The two figures below show the same run.</p>
+    <p>What happens over the run: the first turn over-edits (95 lines), so λ rises
+    and that candidate is demoted; the next prompt tells the agent its diff and the
+    cap. The agent narrows its edits turn over turn. By turn 5 the diff is under 40
+    and <code>pytest</code> passes — the goal met without a sprawling rewrite.</p>
+
+    <div class="callout note">
+      <span class="label">Illustrative run</span>
+      <p>The agent telemetry below is representative, not a live API capture. The
+      λ trajectory is computed by the real controller from that telemetry.</p>
+    </div>
 
     <figure>
-      <div class="chart"><div id="chart-conv"></div></div>
-      <figcaption><b>Figure 2.</b> Raw objective (closeness to target, → 0) vs
-      penalized. The gap is the live constraint penalty — where green dips below
-      blue, a costly jump is priced.</figcaption>
+      <div class="chart"><div id="chart-tests"></div></div>
+      <figcaption><b>Figure 2.</b> Tests passing (fraction, → 1.0) over turns. The
+      goal is reached at turn 5.</figcaption>
     </figure>
 
     <figure>
-      <div class="chart"><div id="chart-lambda"></div></div>
-      <figcaption><b>Figure 3.</b> The multiplier λ over the run. It spikes when
-      jumps exceed the limit and decays as the loop settles — feedback control,
-      not a fixed penalty. Peak λ ≈ 0.62.</figcaption>
+      <div class="chart"><div id="chart-diff"></div></div>
+      <figcaption><b>Figure 3.</b> Lines changed per turn against the 40-line cap
+      (dashed). Early turns blow past it; the λ controller (peak ≈ 0.22) prices the
+      churn, and the diff falls under the cap by turn 4.</figcaption>
     </figure>
 
     <!-- ===== Stop algebra ===== -->
@@ -398,35 +424,38 @@ result = loop.run()             # result.best.payload.text == final agent output
   import * as Plot from "https://cdn.jsdelivr.net/npm/@observablehq/plot/+esm";
   import { themed } from "../styles/plot-theme.js";
 
-  const data = await fetch("../data/lagrange-hillclimb.json").then(r => r.json());
+  const data = await fetch("../data/lagrange-coding.json").then(r => r.json());
   const rows = data.rows;
 
-  // Figure 2 — raw vs penalized objective.
-  const conv = rows.flatMap(d => [
-    { iter: d.iter, v: d.value, series: "objective" },
-    { iter: d.iter, v: d.penalized, series: "penalized" },
-  ]);
-  document.querySelector("#chart-conv").append(
+  // Figure 2 — tests passing over turns.
+  document.querySelector("#chart-tests").append(
     Plot.plot(themed({
-      height: 300,
-      x: { label: "iteration" },
-      y: { label: "value  (closer to 0 = better)", grid: true, tickSize: 0 },
+      height: 260,
+      x: { label: "turn", ticks: rows.map(d => d.turn) },
+      y: { label: "tests passing (fraction)", grid: true, tickSize: 0,
+           domain: [0, 1] },
       marks: [
-        Plot.ruleY([0], { strokeOpacity: 0.35 }),
-        Plot.lineY(conv, { x: "iter", y: "v", stroke: "series", strokeWidth: 2 }),
+        Plot.ruleY([1], { strokeOpacity: 0.35 }),
+        Plot.lineY(rows, { x: "turn", y: "tests", strokeWidth: 2 }),
+        Plot.dot(rows, { x: "turn", y: "tests", r: 3, fill: "currentColor" }),
       ],
     }))
   );
 
-  // Figure 3 — the multiplier over the run.
-  document.querySelector("#chart-lambda").append(
+  // Figure 3 — diff size per turn against the cap.
+  document.querySelector("#chart-diff").append(
     Plot.plot(themed({
-      height: 240,
-      x: { label: "iteration" },
-      y: { label: "λ (price of jumping)", grid: true, tickSize: 0 },
+      height: 280,
+      x: { label: "turn", ticks: rows.map(d => d.turn) },
+      y: { label: "lines changed", grid: true, tickSize: 0 },
       marks: [
-        Plot.areaY(rows, { x: "iter", y: "lambda", fillOpacity: 0.18 }),
-        Plot.lineY(rows, { x: "iter", y: "lambda", strokeWidth: 2 }),
+        Plot.ruleY([data.limit], { strokeDasharray: "4 4", strokeOpacity: 0.7 }),
+        Plot.areaY(rows, { x: "turn", y: "diff", fillOpacity: 0.15 }),
+        Plot.lineY(rows, { x: "turn", y: "diff", strokeWidth: 2 }),
+        Plot.dot(rows, { x: "turn", y: "diff", r: 3, fill: "currentColor" }),
+        Plot.text([{ turn: rows[0].turn, diff: data.limit }],
+                  { x: "turn", y: "diff", text: () => "cap = 40", dy: -8,
+                    textAnchor: "start", fill: "currentColor", fillOpacity: 0.7 }),
       ],
     }))
   );
