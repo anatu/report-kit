@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lagrange — agentic loops as constrained optimization</title>
+  <meta name="description" content="A toolkit that treats an agent loop as constrained optimization: converge toward a goal under explicit budgets, each constraint priced by a Lagrange multiplier.">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:ital@0;1&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="../styles/tokens.css">
+  <link rel="stylesheet" href="../styles/report.css">
+
+  <!-- Scoped styles: tokens only, no hardcoded colors. -->
+  <style>
+    .changelog { margin: var(--sp-5) 0 var(--sp-6); }
+    .changelog table { font-size: var(--fs-sm); }
+    .changelog td:first-child { white-space: nowrap; color: var(--text-muted);
+      font-family: var(--font-mono); }
+    .changelog td .tag { font-family: var(--font-mono); color: var(--accent);
+      font-size: var(--fs-xs); }
+
+    .eq { font-family: var(--font-mono); font-size: var(--fs-base);
+      background: var(--bg-inset); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: var(--sp-4); text-align: center;
+      color: var(--text-strong); margin: var(--sp-5) 0; overflow-x: auto; }
+    .eq .muted { color: var(--text-muted); }
+
+    figure.diagram { background: var(--bg-elevated); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: var(--sp-5) var(--sp-4); }
+    .diagram svg { width: 100%; height: auto; display: block; }
+    .diagram .node { fill: var(--bg-inset); stroke: var(--border-strong); }
+    .diagram .node-label { fill: var(--text-strong); font-family: var(--font-mono);
+      font-size: 13px; }
+    .diagram .node-sub { fill: var(--text-muted); font-family: var(--font-sans);
+      font-size: 11px; }
+    .diagram .flow { stroke: var(--accent); stroke-width: 1.5; fill: none; }
+    .diagram .feedback { stroke: var(--accent-2); stroke-width: 1.5; fill: none;
+      stroke-dasharray: 4 4; }
+    .diagram .feedback-label { fill: var(--accent-2); font-family: var(--font-mono);
+      font-size: 11px; }
+
+    details.disc { border: 1px solid var(--border); border-radius: var(--radius);
+      background: var(--bg-elevated); margin: var(--sp-4) 0; }
+    details.disc > summary { cursor: pointer; padding: var(--sp-3) var(--sp-4);
+      font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--accent);
+      list-style: none; }
+    details.disc > summary::-webkit-details-marker { display: none; }
+    details.disc > summary::before { content: "\25B8  "; color: var(--text-faint); }
+    details.disc[open] > summary::before { content: "\25BE  "; }
+    details.disc > summary:hover { color: var(--accent-hover); }
+    details.disc > *:not(summary) { margin-left: var(--sp-4); margin-right: var(--sp-4); }
+    details.disc pre { margin-top: 0; }
+  </style>
+</head>
+
+<body class="numbered">
+<main class="page">
+  <div class="prose">
+
+    <header class="doc-header">
+      <p class="eyebrow">Project Note · Living document</p>
+      <h1>Lagrange: agentic loops as constrained optimization</h1>
+      <p class="lead">Lagrange treats an agent loop as constrained optimization —
+      maximize task success subject to explicit budgets and hard limits, each
+      constraint priced by a Lagrange multiplier the loop tunes as it runs. The
+      kernel is stdlib-only; a Claude Agent SDK backend and a checkpoint layer
+      sit on top. This page tracks the design and where it's going.</p>
+      <div class="meta">
+        <span><b>Author</b> natu</span>
+        <span><b>Updated</b> 2026-06-24</span>
+        <span><b>Status</b> v0.3 · living</span>
+        <span><b>Repo</b> <a href="https://github.com/anatu/lagrange">anatu/lagrange</a></span>
+      </div>
+    </header>
+
+    <!-- ===== Changelog (top; updated regularly) ===== -->
+    <section class="changelog">
+      <h2>Changelog</h2>
+      <p>Newest first. This page is revised as the project moves.</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Date</th><th>Version</th><th>Change</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>2026-06-24</td><td><span class="tag">v0.3</span></td>
+              <td>Persistence layer — checkpoint, resume, time-travel, and human-in-the-loop pause via one primitive.</td></tr>
+            <tr><td>2026-06-24</td><td><span class="tag">v0.2</span></td>
+              <td>Claude Agent SDK backend — one loop step = one <code>query()</code> turn, session chained across iterations.</td></tr>
+            <tr><td>2026-06-23</td><td><span class="tag">v0.1</span></td>
+              <td>Kernel — loop state machine, composable stop algebra, constraints + λ controller, budget, tracing.</td></tr>
+            <tr><td>2026-06-23</td><td><span class="tag">—</span></td>
+              <td>Prior-art research briefing across the agentic-loop lineage.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="stats">
+      <div class="stat"><div class="value accent">0</div><div class="label">Runtime deps (kernel)</div></div>
+      <div class="stat"><div class="value accent2">44</div><div class="label">Tests passing</div></div>
+      <div class="stat"><div class="value">3</div><div class="label">Subsystems</div></div>
+    </div>
+
+    <!-- ===== Thesis ===== -->
+    <h2>Every agent loop is the same skeleton</h2>
+    <p>From AutoGPT through ReAct, Reflexion, Self-Refine, and GEPA, the structure
+    repeats: <strong>generate → evaluate → select → repeat</strong>. The only real
+    variables are where the scoring signal comes from and what decides "stop." The
+    universal failure mode is termination — letting the model decide it's "done"
+    in natural language, which drifts, loops, or over-refines.</p>
+
+    <p>Lagrange makes those two things first-class. A loop is a small, explicit
+    state machine with pluggable slots; the kernel owns the parts every framework
+    gets wrong — convergence, constraints, budget, and observability.</p>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 720 150" role="img" aria-label="The loop cycle: step, score, constrain, verify, select, stop, with a feedback arc back to step.">
+        <g>
+          <rect class="node" x="6"   y="48" width="96" height="44" rx="6"/>
+          <text class="node-label" x="54"  y="68" text-anchor="middle">step</text>
+          <text class="node-sub"   x="54"  y="84" text-anchor="middle">generate</text>
+
+          <rect class="node" x="126" y="48" width="96" height="44" rx="6"/>
+          <text class="node-label" x="174" y="68" text-anchor="middle">score</text>
+          <text class="node-sub"   x="174" y="84" text-anchor="middle">objective</text>
+
+          <rect class="node" x="246" y="48" width="96" height="44" rx="6"/>
+          <text class="node-label" x="294" y="68" text-anchor="middle">constrain</text>
+          <text class="node-sub"   x="294" y="84" text-anchor="middle">λ penalty</text>
+
+          <rect class="node" x="366" y="48" width="96" height="44" rx="6"/>
+          <text class="node-label" x="414" y="68" text-anchor="middle">verify</text>
+          <text class="node-sub"   x="414" y="84" text-anchor="middle">pass / fail</text>
+
+          <rect class="node" x="486" y="48" width="96" height="44" rx="6"/>
+          <text class="node-label" x="534" y="68" text-anchor="middle">select</text>
+          <text class="node-sub"   x="534" y="84" text-anchor="middle">parents</text>
+
+          <rect class="node" x="606" y="48" width="108" height="44" rx="6"/>
+          <text class="node-label" x="660" y="68" text-anchor="middle">stop?</text>
+          <text class="node-sub"   x="660" y="84" text-anchor="middle">converge / cap</text>
+        </g>
+        <g>
+          <path class="flow" d="M102 70 H126" marker-end="url(#a)"/>
+          <path class="flow" d="M222 70 H246" marker-end="url(#a)"/>
+          <path class="flow" d="M342 70 H366" marker-end="url(#a)"/>
+          <path class="flow" d="M462 70 H486" marker-end="url(#a)"/>
+          <path class="flow" d="M582 70 H606" marker-end="url(#a)"/>
+        </g>
+        <path class="feedback" d="M660 92 V126 H54 V92" marker-end="url(#b)"/>
+        <text class="feedback-label" x="357" y="121" text-anchor="middle">not done → resume with feedback (memory, session)</text>
+        <defs>
+          <marker id="a" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+            <path d="M0 0 L7 3.5 L0 7 z" fill="var(--accent)"/>
+          </marker>
+          <marker id="b" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+            <path d="M0 0 L7 3.5 L0 7 z" fill="var(--accent-2)"/>
+          </marker>
+        </defs>
+      </svg>
+      <figcaption><b>Figure 1.</b> The loop the kernel runs. State carries across
+      iterations; a failed verdict feeds back as the next prompt. Each slot —
+      <code>step</code>, <code>objective</code>, <code>verifier</code>,
+      <code>select</code>, <code>stop</code> — is pluggable.</figcaption>
+    </figure>
+
+    <!-- ===== The framing ===== -->
+    <h2>The name is literal: constraints carry a price</h2>
+    <p>A coding loop that maximizes success subject to budgets (tokens, cost,
+    wall-clock) and hard limits (tests must pass) <em>is</em> a constrained
+    optimization problem. Lagrange optimizes the Lagrangian directly:</p>
+
+    <div class="eq">L = success <span class="muted">−</span> Σ<sub>i</sub> λ<sub>i</sub> <span class="muted">· max(0,</span> cost<sub>i</sub> <span class="muted">−</span> limit<sub>i</sub><span class="muted">)</span></div>
+
+    <p>Each constraint owns a multiplier λ — the price of violating it — updated
+    from measured violation by a small PID controller (the integral term alone is
+    classic dual ascent). The penalized objective feeds selection and plateau
+    detection, so over-budget candidates lose rank without being hard-banned.</p>
+
+    <div class="callout note">
+      <span class="label">Honest about the metaphor</span>
+      <p>The constraint-pricing is literal and load-bearing. The full
+      controller-theory machinery (stability guarantees, auto-converging λ) is
+      not — λ is sensitive and task-dependent. Lagrange ships the controller and
+      Pareto-sweep tooling, not a promise that one knob auto-tunes itself.</p>
+    </div>
+
+    <!-- ===== The chart: real run ===== -->
+    <h2>The controller engages, then relaxes</h2>
+    <p>On a toy hill-climb (drive <code>x</code> to 7.3, with each step's jump
+    constrained to ≤ 2.0), the loop converged in 35 iterations. The figure shows
+    the mechanism working: when the agent proposes a big jump, λ rises and the
+    penalized objective drops below the raw value; as steps shrink, λ relaxes
+    toward zero. This is real trace data, not an illustration.</p>
+
+    <figure>
+      <div class="chart"><div id="chart-conv"></div></div>
+      <figcaption><b>Figure 2.</b> Raw objective (closeness to target, → 0) versus
+      the penalized objective. The gap is the live constraint penalty: where the
+      green trace dips below blue, a costly jump is being priced.</figcaption>
+    </figure>
+
+    <figure>
+      <div class="chart"><div id="chart-lambda"></div></div>
+      <figcaption><b>Figure 3.</b> The multiplier λ over the run. It spikes when
+      jumps exceed the limit and decays as the loop settles — feedback control,
+      not a fixed penalty. Peak λ ≈ 0.62.</figcaption>
+    </figure>
+
+    <!-- ===== Stop algebra ===== -->
+    <h2>The stop algebra refuses underspecified loops</h2>
+    <p>Stopping is a composable algebra. Conditions combine with <code>|</code>;
+    the first to fire wins and records why, and whether that counts as
+    convergence.</p>
+
+<pre><code>stop = Success() | Plateau(patience=3) | Oscillation() | MaxIters(20)</code></pre>
+
+    <p>Every condition advertises two facts: whether it <em>can converge</em>
+    (success) and whether it <em>guarantees termination</em> (a hard cap). The
+    loop reads them and <strong>refuses to run a config that can't do both</strong>
+    — a loop that can only stop by exhausting its budget is the lineage's most
+    expensive anti-pattern.</p>
+
+    <div class="table-wrap">
+      <table>
+        <caption><b>Table 1.</b> Stop conditions by role.</caption>
+        <thead>
+          <tr><th>Role</th><th>Conditions</th><th class="num">Converges?</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Success</td><td><code>Success</code>, <code>ValueThreshold</code>, <code>Custom</code></td><td class="num">yes</td></tr>
+          <tr><td>Stagnation</td><td><code>Plateau</code>, <code>Oscillation</code></td><td class="num">no*</td></tr>
+          <tr><td>Hard cap</td><td><code>MaxIters</code>, <code>WallClock</code>, <code>TokenBudget</code>, <code>CostBudget</code></td><td class="num">no</td></tr>
+          <tr><td>Control</td><td><code>Pause</code> (HITL), <code>ConstraintViolated</code></td><td class="num">no</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p><small>* <code>Plateau</code> can be marked convergent when a plateau means
+    "good enough."</small></p>
+
+    <!-- ===== Claude backend ===== -->
+    <h2>One query() call is one loop step</h2>
+    <p>The default backend drives a Claude agent. One Lagrange step is one
+    <code>query()</code> turn; the executor chains <code>session_id</code> across
+    iterations so context carries, and feeds a failing verdict back as the next
+    prompt — a Reflexion-style refine cycle on a real agent. Per-turn caps map to
+    the SDK's <code>max_turns</code> / <code>max_budget_usd</code>; each turn's
+    usage is recorded into the loop so <code>TokenBudget</code> /
+    <code>CostBudget</code> bound the whole run.</p>
+
+    <details class="disc">
+      <summary>Show the coding-loop in full</summary>
+<pre><code>from lagrange import Budget
+from lagrange.backends.claude import ClaudeExecutor
+from lagrange.stop import Success, Plateau
+from lagrange.verify import CommandVerifier
+
+executor = ClaudeExecutor(
+    task="The tests are failing. Fix the code and run `pytest -q`.",
+    goal="pytest passes",
+    cwd="/path/to/project",
+    allowed_tools=["Read", "Edit", "Bash"],
+    per_step_max_turns=30,          # SDK hard stop per turn
+)
+
+loop = executor.build_loop(
+    verifier=CommandVerifier(lambda _: ["pytest", "-q"], cwd="/path/to/project"),
+    stop=Success() | Plateau(patience=3),
+    budget=Budget(max_iters=8, max_cost_usd=10.0),
+)
+result = loop.run()             # result.best.payload.text == final agent output</code></pre>
+    </details>
+
+    <p>Two verifier styles cover the spectrum. <code>CommandVerifier</code> runs a
+    real command and gates on the exit code — deterministic and
+    transcript-provable. <code>ClaudeJudge</code> is the actor/critic split: a
+    fresh, cheap model judges the agent's surfaced output. The judge can't run
+    tools, so the goal must be phrased to be provable from what the agent showed.</p>
+
+    <!-- ===== Persistence ===== -->
+    <h2>One checkpoint primitive: resume, time-travel, HITL</h2>
+    <p>Give a loop a <code>run_id</code> and a <code>Persister</code> and it
+    checkpoints every iteration. The same primitive serves three needs:</p>
+    <ul>
+      <li><strong>Crash recovery</strong> — restart, call <code>run()</code> again;
+      the loop restores iteration, archive, memory, λ state, usage, and the
+      agent's <code>session_id</code>, then continues.</li>
+      <li><strong>Time-travel</strong> — every iteration is kept;
+      <code>history(run_id)</code> lists them, <code>load(run_id, n)</code> loads any.</li>
+      <li><strong>Human-in-the-loop</strong> — a <code>Pause</code> condition
+      checkpoints and exits; release it and resume.</li>
+    </ul>
+    <p>Two stores ship: <code>MemoryPersister</code> (in-process) and
+    <code>SQLitePersister</code> (durable, stdlib-only, survives a crash). The
+    Claude executor auto-registers as a state provider, so the agent session is
+    checkpointed without extra wiring.</p>
+
+    <!-- ===== Next steps ===== -->
+    <h2>Next steps</h2>
+    <p>Near-term work, roughly in priority order. This list is the backlog the
+    changelog draws down.</p>
+
+    <div class="table-wrap">
+      <table>
+        <caption><b>Table 2.</b> Planned work (not yet built).</caption>
+        <thead>
+          <tr><th>Item</th><th>What</th><th class="num">Size</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>CI + LICENSE</td><td>GitHub Actions running pytest on push; add the MIT <code>LICENSE</code> file <code>pyproject</code> already declares.</td><td class="num">S</td></tr>
+          <tr><td>Pareto best-of-N</td><td>A worked example fanning out parallel Claude candidates in git worktrees, selected by <code>ParetoFrontier</code>.</td><td class="num">M</td></tr>
+          <tr><td>Resume CLI</td><td><code>lagrange resume &lt;run_id&gt;</code> over a <code>SQLitePersister</code> for operator-driven recovery.</td><td class="num">M</td></tr>
+          <tr><td>λ auto-tune</td><td>Binary-search λ to hit an exact compute budget where cost is monotone in λ; ship the Pareto sweep, not a magic knob.</td><td class="num">M</td></tr>
+          <tr><td>Async loop API</td><td>A native <code>arun()</code> so the backend avoids per-step <code>asyncio.run</code> and composes inside async apps.</td><td class="num">M</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ===== Limitations ===== -->
+    <h2>Limitations</h2>
+    <ul>
+      <li><code>SQLitePersister</code> uses <code>pickle</code> — never load
+      checkpoints from an untrusted source.</li>
+      <li>The <code>ClaudeJudge</code> verifier can't run tools; convergence
+      conditions it judges must be provable from the agent's surfaced output.</li>
+      <li>Each step bridges sync↔async with <code>asyncio.run</code>; it raises if
+      called from inside a running event loop (async API is future work).</li>
+      <li>λ is sensitive and task-dependent — the controller helps, but tuning is
+      still empirical.</li>
+    </ul>
+
+    <footer class="doc-footer">
+      <p>Living document · revised 2026-06-24 ·
+      <a href="../index.html">All reports</a> ·
+      Source on <a href="https://github.com/anatu/lagrange">GitHub</a></p>
+    </footer>
+
+  </div>
+</main>
+
+<!-- ===== Charts: Observable Plot, themed, real trace data ===== -->
+<script type="module">
+  import * as Plot from "https://cdn.jsdelivr.net/npm/@observablehq/plot/+esm";
+  import { themed } from "../styles/plot-theme.js";
+
+  const data = await fetch("../data/lagrange-hillclimb.json").then(r => r.json());
+  const rows = data.rows;
+
+  // Figure 2 — raw vs penalized objective.
+  const conv = rows.flatMap(d => [
+    { iter: d.iter, v: d.value, series: "objective" },
+    { iter: d.iter, v: d.penalized, series: "penalized" },
+  ]);
+  document.querySelector("#chart-conv").append(
+    Plot.plot(themed({
+      height: 300,
+      x: { label: "iteration" },
+      y: { label: "value  (closer to 0 = better)", grid: true, tickSize: 0 },
+      marks: [
+        Plot.ruleY([0], { strokeOpacity: 0.35 }),
+        Plot.lineY(conv, { x: "iter", y: "v", stroke: "series", strokeWidth: 2 }),
+      ],
+    }))
+  );
+
+  // Figure 3 — the multiplier over the run.
+  document.querySelector("#chart-lambda").append(
+    Plot.plot(themed({
+      height: 240,
+      x: { label: "iteration" },
+      y: { label: "λ (price of jumping)", grid: true, tickSize: 0 },
+      marks: [
+        Plot.areaY(rows, { x: "iter", y: "lambda", fillOpacity: 0.18 }),
+        Plot.lineY(rows, { x: "iter", y: "lambda", strokeWidth: 2 }),
+      ],
+    }))
+  );
+</script>
+</body>
+</html>

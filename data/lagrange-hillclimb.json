@@ -1,0 +1,219 @@
+{
+"target": 7.3,
+"converged": true,
+"reason": "value_threshold",
+"iterations": 35,
+"best_x": 7.3366,
+"rows": [
+{
+"iter": 1,
+"value": -0.4116,
+"penalized": -0.4116,
+"lambda": 0.0
+},
+{
+"iter": 2,
+"value": -1.6521,
+"penalized": -1.6533,
+"lambda": 0.0191
+},
+{
+"iter": 3,
+"value": -1.0351,
+"penalized": -1.0351,
+"lambda": 0.0
+},
+{
+"iter": 4,
+"value": -2.3402,
+"penalized": -2.3402,
+"lambda": 0.0
+},
+{
+"iter": 5,
+"value": -0.3214,
+"penalized": -0.3214,
+"lambda": 0.0
+},
+{
+"iter": 6,
+"value": -1.0819,
+"penalized": -1.0819,
+"lambda": 0.0
+},
+{
+"iter": 7,
+"value": -1.949,
+"penalized": -1.971,
+"lambda": 0.0811
+},
+{
+"iter": 8,
+"value": -1.7768,
+"penalized": -1.7768,
+"lambda": 0.0
+},
+{
+"iter": 9,
+"value": -0.5086,
+"penalized": -0.5086,
+"lambda": 0.0
+},
+{
+"iter": 10,
+"value": -0.3457,
+"penalized": -0.3457,
+"lambda": 0.0
+},
+{
+"iter": 11,
+"value": -2.9435,
+"penalized": -3.4235,
+"lambda": 0.3795
+},
+{
+"iter": 12,
+"value": -0.2942,
+"penalized": -0.2942,
+"lambda": 0.0
+},
+{
+"iter": 13,
+"value": -2.0395,
+"penalized": -2.0395,
+"lambda": 0.0
+},
+{
+"iter": 14,
+"value": -1.7522,
+"penalized": -1.7529,
+"lambda": 0.0139
+},
+{
+"iter": 15,
+"value": -0.6398,
+"penalized": -0.6398,
+"lambda": 0.0
+},
+{
+"iter": 16,
+"value": -2.2901,
+"penalized": -2.2901,
+"lambda": 0.0
+},
+{
+"iter": 17,
+"value": -2.9838,
+"penalized": -3.4737,
+"lambda": 0.3834
+},
+{
+"iter": 18,
+"value": -2.4977,
+"penalized": -2.9894,
+"lambda": 0.621
+},
+{
+"iter": 19,
+"value": -1.2368,
+"penalized": -1.2368,
+"lambda": 0.4803
+},
+{
+"iter": 20,
+"value": -1.8793,
+"penalized": -1.9716,
+"lambda": 0.5323
+},
+{
+"iter": 21,
+"value": -1.2854,
+"penalized": -1.2854,
+"lambda": 0.2297
+},
+{
+"iter": 22,
+"value": -1.2011,
+"penalized": -1.2011,
+"lambda": 0.0782
+},
+{
+"iter": 23,
+"value": -2.665,
+"penalized": -3.016,
+"lambda": 0.366
+},
+{
+"iter": 24,
+"value": -0.7833,
+"penalized": -0.7833,
+"lambda": 0.0892
+},
+{
+"iter": 25,
+"value": -0.4988,
+"penalized": -0.4988,
+"lambda": 0.0
+},
+{
+"iter": 26,
+"value": -3.4886,
+"penalized": -3.9165,
+"lambda": 0.3583
+},
+{
+"iter": 27,
+"value": -0.6819,
+"penalized": -0.6819,
+"lambda": 0.0
+},
+{
+"iter": 28,
+"value": -0.5929,
+"penalized": -0.5929,
+"lambda": 0.0
+},
+{
+"iter": 29,
+"value": -3.0099,
+"penalized": -3.5201,
+"lambda": 0.3912
+},
+{
+"iter": 30,
+"value": -2.389,
+"penalized": -2.7962,
+"lambda": 0.5962
+},
+{
+"iter": 31,
+"value": -0.4094,
+"penalized": -0.4094,
+"lambda": 0.0307
+},
+{
+"iter": 32,
+"value": -2.5411,
+"penalized": -2.7762,
+"lambda": 0.2813
+},
+{
+"iter": 33,
+"value": -1.7895,
+"penalized": -1.7895,
+"lambda": 0.1299
+},
+{
+"iter": 34,
+"value": -1.8654,
+"penalized": -1.8938,
+"lambda": 0.1778
+},
+{
+"iter": 35,
+"value": -0.0366,
+"penalized": -0.0366,
+"lambda": 0.0
+}
+]
+}
