@@ -189,9 +189,68 @@
 
     <!-- ===== The chart: real run ===== -->
     <h2>The controller engages, then relaxes</h2>
-    <p>Toy hill-climb: drive <code>x</code> to 7.3, each jump ≤ 2.0. Converged in
-    35 iterations. Big jump → λ rises → penalized objective drops below raw. Steps
-    shrink → λ relaxes to zero. Real trace data, not an illustration.</p>
+    <p>A worked example, end to end. The task: find a number <code>x</code> equal
+    to 7.3. The catch: each guess may move at most 2.0 from the last one. No LLM —
+    a minimal loop that isolates the constraint mechanism. Every slot from Figure 1
+    and the Lagrangian above is filled in below.</p>
+
+    <div class="table-wrap">
+      <table>
+        <caption><b>Table 1.</b> The example, mapped to the loop's components.</caption>
+        <thead>
+          <tr><th>Component</th><th>In this example</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Goal</td><td>drive <code>x</code> to the target 7.3</td></tr>
+          <tr><td><code>step</code> (generate)</td><td>propose a new <code>x</code> near the best so far; the move shrinks as λ rises</td></tr>
+          <tr><td><code>objective</code> → value</td><td><code>−|x − 7.3|</code> — closeness to target; 0 is exact, higher is better</td></tr>
+          <tr><td><code>objective</code> → metric</td><td><code>jump = |x − previous x|</code> — the cost the constraint watches</td></tr>
+          <tr><td>Constraint</td><td><code>jump ≤ 2.0</code></td></tr>
+          <tr><td>λ (multiplier)</td><td>price of exceeding the jump limit; PID controller, <code>ki = 0.3</code></td></tr>
+          <tr><td>Penalized objective</td><td><code>value − λ · max(0, jump − 2.0)</code> — what selection ranks on</td></tr>
+          <tr><td><code>stop</code> (converge)</td><td><code>ValueThreshold(−0.05)</code> — within 0.05 of target, or a 30-step plateau</td></tr>
+          <tr><td>Budget (hard cap)</td><td>400 iterations</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <details class="disc">
+      <summary>Show the full configuration</summary>
+<pre><code>from lagrange import Budget, Constraint, LagrangeLoop, Score
+from lagrange.constraint import LambdaController
+from lagrange.stop import ValueThreshold, Plateau
+
+TARGET = 7.3
+
+def step(s):                       # generate: propose the next x
+    if s.best is None:
+        return random_start()
+    reach = 4.0 / (1.0 + s.ctx.lambdas.get("jump", 0.0))   # back off as λ rises
+    return s.best.payload + random_move(reach)
+
+def objective(payload, ctx):       # score: value + the metric to constrain
+    err  = abs(payload - TARGET)
+    prev = ctx.best().payload if ctx.best() else payload
+    jump = abs(payload - prev)
+    return Score(value=-err, metrics={"jump": jump})
+
+loop = LagrangeLoop(
+    goal="drive x to target",
+    step=step,
+    objective=objective,
+    constraints=[Constraint("jump", limit=2.0,
+                            controller=LambdaController(ki=0.3))],
+    stop=ValueThreshold(-0.05) | Plateau(patience=30),
+    budget=Budget(max_iters=400),
+)
+result = loop.run()                # converged in 35 iterations, x ≈ 7.34</code></pre>
+    </details>
+
+    <p>What happens over the run: a big jump exceeds the limit, so λ rises and the
+    penalized objective drops below the raw value. That demotes the candidate, so
+    <code>step</code> takes smaller moves. As the moves stay under the limit, λ
+    decays back toward zero. Converged in 35 iterations. Real trace data, not an
+    illustration. The two figures below show the same run.</p>
 
     <figure>
       <div class="chart"><div id="chart-conv"></div></div>
@@ -221,7 +280,7 @@
 
     <div class="table-wrap">
       <table>
-        <caption><b>Table 1.</b> Stop conditions by role.</caption>
+        <caption><b>Table 2.</b> Stop conditions by role.</caption>
         <thead>
           <tr><th>Role</th><th>Conditions</th><th class="num">Converges?</th></tr>
         </thead>
@@ -298,7 +357,7 @@ result = loop.run()             # result.best.payload.text == final agent output
 
     <div class="table-wrap">
       <table>
-        <caption><b>Table 2.</b> Planned work (not yet built).</caption>
+        <caption><b>Table 3.</b> Planned work (not yet built).</caption>
         <thead>
           <tr><th>Item</th><th>What</th><th class="num">Size</th></tr>
         </thead>
